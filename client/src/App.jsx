@@ -1,9 +1,7 @@
-import Chat from "./pages/Chat";
+import MainRoutes from "./routing/mainRoutes";
 
 export default function App() {
   return (
-    <div className="h-screen w-screen">
-      <Chat />
-    </div>
+    <MainRoutes />
   );
 }

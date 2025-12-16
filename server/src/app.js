@@ -21,7 +21,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 })); // Rate limiting
 app.use(express.json());
 
 // Routes (we'll add these later)
-app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
 // app.use('/api/chat', chatRoutes);
 
 module.exports = { app, server, io };

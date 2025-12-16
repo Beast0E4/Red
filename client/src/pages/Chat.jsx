@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 
 import { initSocket } from "../redux/slices/socket.slice";
 
@@ -7,11 +8,18 @@ export default function Chat() {
   const dispatch = useDispatch();
   const socket = useSelector ((state) => state.socket.socket);
 
+  const authState = useSelector ((state) => state.auth);
+  const navigate = useNavigate ();
+
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
 
   useEffect(() => {
+    console.log (authState);
+    if (!authState.isLoggedIn) {
+        navigate ('/create-account'); return;
+    }
     dispatch(initSocket({ userId: authState.data._id, dispatch }));
 
     return () => {
