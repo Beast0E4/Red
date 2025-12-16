@@ -9,6 +9,9 @@ const app = express();
 const server = createServer(app);
 const io = socketIo(server, { cors: { origin: '*' } }); // Configure CORS for frontend
 
+const chatRoutes = require ('./routes/chat.routes')
+const authRoutes = require ('./routes/auth.routes')
+
 // Security middleware
 app.use(helmet());
 app.use(cors());
@@ -18,7 +21,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 })); // Rate limiting
 app.use(express.json());
 
 // Routes (we'll add these later)
-app.use('/api/auth', require('./modules/auth/routes'));
-app.use('/api/chat', require('./modules/chat/routes'));
+app.use('/api/auth', authRoutes);
+// app.use('/api/chat', chatRoutes);
 
 module.exports = { app, server, io };
