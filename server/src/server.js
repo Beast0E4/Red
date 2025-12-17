@@ -2,7 +2,7 @@ const express = require ('express');
 const app = express ();
 
 require('dotenv').config();
-const { server, io } = require('./app');
+const { server } = require('./app');
 const connectDB = require('./config/db');
 const { connectRedis } = require('./config/redis');
 const http = require("http");
@@ -23,6 +23,6 @@ connectDB();
 connectRedis();
 
 // Initialize Socket.IO
-setupSocket (http.createServer(app));
+setupSocket (server);
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

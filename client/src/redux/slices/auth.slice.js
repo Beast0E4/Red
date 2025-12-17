@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "../../config/axios";
+import axiosInstance from "../../config/axios";
 
 const initialState = {
     data: JSON.parse(localStorage.getItem("data")) || undefined,
@@ -12,7 +12,7 @@ export const signupUser = createAsyncThunk(
   "auth/signup",
   async (data, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/auth/register", data);
+      const res = await axiosInstance.post("/auth/register", data);
       return res.data;
     } catch (err) {
       return rejectWithValue(err.response?.data?.error);
@@ -25,10 +25,22 @@ export const loginUser = createAsyncThunk(
   "auth/login",
   async (data, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/auth/login", data);
+      const res = await axiosInstance.post("/auth/login", data);
       return res.data;
     } catch (err) {
       return rejectWithValue(err.response?.data?.error);
+    }
+  }
+);
+
+export const fetchAllUsers = createAsyncThunk(
+  "users/fetchAll",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await axiosInstance.get("/auth");
+      return res.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message);
     }
   }
 );
@@ -48,13 +60,16 @@ const authSlice = createSlice({
 
   extraReducers: (builder) => {
     builder
-      .addCase(signupUser.fulfilled, (state) => {
-        state.loading = false;
-      })
       .addCase(loginUser.fulfilled, (state, action) => {
-        state.loading = false;
-        state.accessToken = action.payload.accessToken;
-        state.refreshToken = action.payload.refreshToken;
+        if (!action.payload) return;
+
+        localStorage.setItem("token", action.payload?.token);
+        localStorage.setItem("data", JSON.stringify(action.payload?.userdata));
+        localStorage.setItem("isLoggedIn", (action.payload?.token != undefined));
+
+        state.data = action.payload.userdata;
+        state.token = action.payload.token;
+        state.isLoggedIn = (action.payload?.token != undefined);
       })
   },
 });

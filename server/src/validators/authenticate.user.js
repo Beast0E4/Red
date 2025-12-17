@@ -1,30 +1,37 @@
-
-const authMiddleware = require('../middleware/auth.middleware')
-
+const authMiddleware = require("../middleware/auth.middleware");
 
 const isUserAuthenticated = async (req, res, next) => {
-    const token = req.headers['x-access-token']
+  const token = req.headers["x-access-token"];
 
-    if (!token) {
-        return res.status(401).send({
-            msg: "Token not provided"
-        });
+  if (!token) {
+    return res.status(401).json({
+      msg: "Token not provided",
+    });
+  }
+
+  try {
+    // 🔑 Verify token
+    const decoded = await authMiddleware.verfiyJwtToken(token);
+
+    if (!decoded) {
+      return res.status(401).json({
+        msg: "Token not verified",
+      });
     }
-    try {
-        const verifyToken = await authMiddleware.verfiyJwtToken(token);
-        if (!verifyToken) {
-            return res.status(401).json({
-                msg: "Token not verified"
-            });
-        }
-        next();
-    } catch (error) {
-        return res.status(500).json({
-            msg: "Internal server error"
-        });
-    }
+
+    // 🔥 ATTACH USER TO REQUEST
+    req.user = { id: decoded.id };
+    console.log ("-------------->", decoded)
+
+    next();
+  } catch (error) {
+    console.error("Auth error:", error);
+    return res.status(401).json({
+      msg: "Invalid or expired token",
+    });
+  }
 };
 
-module.exports={
-    isUserAuthenticated
-}
+module.exports = {
+  isUserAuthenticated,
+};

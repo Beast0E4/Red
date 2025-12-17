@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { signupUser } from "../redux/slices/auth.slice";
+import { Link } from 'react-router-dom'
 
 export default function Signup() {
   const dispatch = useDispatch();
@@ -21,43 +22,95 @@ export default function Signup() {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 px-4">
       <form
         onSubmit={handleSubmit}
-        className="bg-white p-6 rounded-lg shadow w-80 space-y-4"
+        className="w-full max-w-md bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl p-8 space-y-6"
       >
-        <h2 className="text-xl font-semibold text-center">Sign Up</h2>
+        {/* Header */}
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-800">
+            Create your account
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Join us and start chatting 🚀
+          </p>
+        </div>
 
-        <input
-          name="username"
-          placeholder="Username"
-          className="w-full border p-2 rounded"
-          onChange={handleChange}
-        />
+        {/* Username */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">
+            Username
+          </label>
+          <input
+            name="username"
+            placeholder="john_doe"
+            onChange={handleChange}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 
+                       focus:border-transparent transition"
+          />
+        </div>
 
-        <input
-          name="email"
-          placeholder="Email"
-          className="w-full border p-2 rounded"
-          onChange={handleChange}
-        />
+        {/* Email */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">
+            Email address
+          </label>
+          <input
+            name="email"
+            type="email"
+            placeholder="john@example.com"
+            onChange={handleChange}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 
+                       focus:border-transparent transition"
+          />
+        </div>
 
-        <input
-          name="password"
-          type="password"
-          placeholder="Password"
-          className="w-full border p-2 rounded"
-          onChange={handleChange}
-        />
+        {/* Password */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">
+            Password
+          </label>
+          <input
+            name="password"
+            type="password"
+            placeholder="••••••••"
+            onChange={handleChange}
+            className="w-full px-4 py-2 rounded-lg border border-gray-300 
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 
+                       focus:border-transparent transition"
+          />
+        </div>
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
+        {/* Error */}
+        {error && (
+          <div className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
 
+        {/* Button */}
         <button
           disabled={loading}
-          className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+          className={`w-full py-2.5 rounded-lg font-medium text-white transition
+            ${
+              loading
+                ? "bg-blue-400 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700 active:scale-[0.98]"
+            }`}
         >
-          {loading ? "Signing up..." : "Sign Up"}
+          {loading ? "Creating account..." : "Sign Up"}
         </button>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-gray-500">
+          Already have an account?{" "}
+          <Link to={'/login'} className="text-blue-600 hover:underline cursor-pointer">
+            Log in
+          </Link>
+        </p>
       </form>
     </div>
   );

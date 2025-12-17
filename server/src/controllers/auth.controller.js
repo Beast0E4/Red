@@ -2,6 +2,7 @@ const {
   createUser,
   validateUser,
   refreshAccessToken,
+  getAllUsersService
 } = require('../services/user.service');
 const { StatusCodes } = require('http-status-codes');
 const jwt = require('jsonwebtoken')
@@ -30,7 +31,7 @@ const signin = async(req,res) => {
         })
     }
 
-    const token = jwt.sign({email : req.body.email} , process.env.secret_key);; 
+    const token = jwt.sign({id: response.userdata.id} , process.env.JWT_SECRET);; 
 
     return res.status(StatusCodes.ACCEPTED).json({
         message : "Successfully Login",
@@ -50,8 +51,26 @@ const refresh = async (req, res) => {
   }
 };
 
+
+const getAllUsers = async (req, res) => {
+  try {
+    const users = await getAllUsersService();
+
+    res.status(200).json({
+      success: true,
+      users,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
+  }
+};
+
 module.exports = {
   signup,
   signin,
   refresh,
+  getAllUsers
 };

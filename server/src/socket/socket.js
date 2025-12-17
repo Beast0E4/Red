@@ -2,6 +2,8 @@ require('dotenv').config();
 
 const { Server } = require("socket.io");
 const User = require("../models/user.model");
+const Message = require ('../models/message.model')
+const Chat = require ('../models/chat.model')
 const mongoose = require("mongoose");
 
 const FRONT_URL = process.env.FRONT_URL;
@@ -27,115 +29,52 @@ const setupSocket = (server) => {
         break;
       }
     }
-    onlineUsers.delete(socket.id);
-    io.emit("online-users", Array.from(onlineUsers.values()));
   };
 
-  const sendMessage = async (message) => {
-    const senderSocketId = userSocketMap.get(message.sender);
-    const recipientSocketId = userSocketMap.get(message.recipient);
-    
-    const uploadedFiles = [];
+    const sendMessage = async (data) => {
+    try {
+        const { sender, receiver, content } = data;
 
-  
-    // Upload files to Cloudinary
-    for (const file of message?.files) {
-      try {
-        const uploadRes = await uploadFile(file);
-        uploadedFiles.push({
-          name: file.name,
-          url: uploadRes.secure_url,
-          filename: file.type,
+        if (!sender || !receiver || !content) return;
+
+        /* ---------- 1️⃣ FIND OR CREATE CHAT ---------- */
+        let chat = await Chat.findOne({
+            participants: { $all: [sender, receiver] },
         });
-      } catch (err) {
-        console.error("Cloudinary upload error:", err);
-      }
-    }
-  
-    // 1. Get the latest personal message between sender and recipient, excluding group messages
-    const latestMessage = await Message.findOne({
-      $or: [
-        { sender: message.sender, recipient: message.recipient, groupId : ""},
-        { sender: message.recipient, recipient: message.sender, groupId : ""}
-      ]
-    }).sort({ createdAt: -1 });
-  
-    // 2. Check if date separator is needed (before creating the main message)
-    const nowDate = new Date().toISOString().slice(0, 10);
-    const latestDate = latestMessage?.createdAt?.toISOString().slice(0, 10);
-  
-    // Check if date separator is required
-    if (!latestMessage || nowDate !== latestDate) {
-      const months = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-      ];
-  
-      const now = new Date();
-      const formattedDate = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
-  
-      // Create date message (only if it hasn't been created for today)
-      const dateMessage = await Message.create({
-        sender: message.sender,
-        recipient: message.recipient,
-        content: formattedDate,
-        files: [],
-        targetType: "message",
-        messageType: true
-      });
-  
-      // Send date message to both sender and recipient
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit("receiveMessage", dateMessage);
-      }
-      if (senderSocketId) {
-        io.to(senderSocketId).emit("receiveMessage", dateMessage);
-      }
-    }
 
-    if (message.targetType !== "message") {
-        const parts = message.content.filename?.split('.') || message.content.image[0]?.filename?.split('.') || message.content.video[0]?.filename?.split('.');
-        const extension = parts.pop();
-        const base = parts.join('.');
-
-        const url = typeof message.content.video === 'string'
-        ? message.content.video
-        : message.content.image?.[0]?.url || message.content.video?.[0]?.url;
-
-        if (url) {
-            uploadedFiles.push({
-                name: message.content.caption || "File",
-                url: url,
-                filename: `${base}/${extension}`,
+        if (!chat) {
+            chat = await Chat.create({
+                participants: [sender, receiver],
             });
         }
 
-        message.content = "";
+        /* ---------- 2️⃣ CREATE MESSAGE ---------- */
+        const message = await Message.create({
+            chat: chat._id,
+            sender,
+            receiver,
+            content,
+        });
+
+        /* ---------- 3️⃣ UPDATE CHAT METADATA ---------- */
+        chat.lastMessage = message._id;
+        await chat.save();
+
+        /* ---------- 4️⃣ EMIT MESSAGE ---------- */
+        const receiverSocketId = userSocketMap.get(receiver.toString());
+        const senderSocketId = userSocketMap.get(sender.toString());
+
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("receive-message", message);
+        }
+
+        if (senderSocketId) {
+            io.to(senderSocketId).emit("receive-message", message);
+        }
+    } catch (error) {
+        console.error("Send message error:", error);
     }
-  
-    // 3. Create the actual message
-    const createdMessage = await Message.create({
-        sender: message.sender,
-        recipient: message.recipient,
-        targetType: message.targetType,
-        postId: message.postId,
-        content: message.content,
-        messageType: false,
-        files: uploadedFiles
-    });
-  
-    const messageData = await Message.findById(createdMessage._id)
-      .populate("sender", "id name image")
-      .populate("recipient", "id name image");
-  
-    // Send the actual message to both sender and recipient
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit("receiveMessage", messageData);
-    }
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("receiveMessage", messageData);
-    }
-  };
+    };
 
     io.on("connection", (socket) => {
         console.log(`Socket ${socket.id} connected.`);
@@ -149,7 +88,7 @@ const setupSocket = (server) => {
         }
         socket.on("disconnect", () => disconnect(socket));
 
-        socket.on("sendMessage", sendMessage);
+        socket.on("send-message", sendMessage);
     });
 }
 

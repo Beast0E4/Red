@@ -1,5 +1,6 @@
 import { createSlice } from "@reduxjs/toolkit";
 import { io } from "socket.io-client";
+import { updateMessages } from "./chat.slice";
 
 // Use environment variable at the top
 const BASE_URL = import.meta.env.VITE_BASE_URL;
@@ -38,9 +39,10 @@ const socketSlice = createSlice({
           dispatch(setConnected(false));
         });
 
-        // socketInstance.on("receiveMessage", (data) => {
-        //   dispatch(updateMessages({ message: data }));
-        // });
+        socketInstance.on("receive-message", (data) => {
+            console.log ("Check");
+          dispatch(updateMessages ({ message: data }));
+        });
       }
 
       state.socket = socketInstance;
@@ -50,7 +52,7 @@ const socketSlice = createSlice({
       if (socketInstance) {
         socketInstance.off("connect");
         socketInstance.off("disconnect");
-        // socketInstance.off("receiveMessage");
+        socketInstance.off("receive-message");
 
         socketInstance.disconnect();
         socketInstance = null;

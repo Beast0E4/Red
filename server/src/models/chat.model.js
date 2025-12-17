@@ -1,8 +1,27 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const chatSchema = new mongoose.Schema({
-  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  createdAt: { type: Date, default: Date.now },
-});
+const chatSchema = new mongoose.Schema(
+  {
+    participants: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+      },
+    ],
 
-module.exports = mongoose.model('Chat', chatSchema);
+    lastMessage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+    },
+  },
+  {
+    timestamps: true, // createdAt & updatedAt
+  }
+);
+
+/* ---------- INDEXES ---------- */
+chatSchema.index({ participants: 1 });
+chatSchema.index({ updatedAt: -1 });
+
+module.exports = mongoose.model("Chat", chatSchema);
