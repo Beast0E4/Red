@@ -23,8 +23,7 @@ const messageSlice = createSlice({
   name: "messages",
   initialState: {
     list: [],
-    loading: false,
-    error: null,
+    onlineUsers: []
   },
   reducers: {
     clearMessages: (state) => {
@@ -32,16 +31,19 @@ const messageSlice = createSlice({
     },
     updateMessages: (state, action) => {
         state.list.push (action.payload.message);
+    },
+    setOnlineUsers: (state, action) => {
+      const users = action.payload?.onlineUsers;
+      state.onlineUsers = users;
     }
   },
   extraReducers: (builder) => {
     builder
       .addCase(fetchMessagesByUserId.fulfilled, (state, action) => {
-        state.loading = false;
         state.list = action.payload;
       })
   },
 });
 
-export const { clearMessages, updateMessages } = messageSlice.actions;
+export const { clearMessages, updateMessages, setOnlineUsers } = messageSlice.actions;
 export default messageSlice.reducer;

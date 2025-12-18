@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
 
 const FRONT_URL = process.env.FRONT_URL;
 
-const { setIO, userSocketMap } = require("./socketInstance"); // To set io globally
+const { setIO, userSocketMap, onlineUsers } = require("./socketInstance"); // To set io globally
 
 const setupSocket = (server) => {
   const io = new Server(server, {
@@ -29,52 +29,76 @@ const setupSocket = (server) => {
         break;
       }
     }
+    onlineUsers.delete(socket.id);
+    io.emit("online-users", Array.from(onlineUsers.values()));
   };
 
     const sendMessage = async (data) => {
-    try {
-        const { sender, receiver, content } = data;
+        try {
+            const { sender, receiver, content } = data;
 
-        if (!sender || !receiver || !content) return;
+            if (!sender || !receiver || !content) return;
 
-        /* ---------- 1️⃣ FIND OR CREATE CHAT ---------- */
-        let chat = await Chat.findOne({
-            participants: { $all: [sender, receiver] },
-        });
+            /* ---------- 1️⃣ FIND OR CREATE CHAT ---------- */
+            let chat = await Chat.findOne({
+                participants: { $all: [sender, receiver] },
+            });
 
-        if (!chat) {
-            chat = await Chat.create({
-                participants: [sender, receiver],
+            if (!chat) {
+                chat = await Chat.create({
+                    participants: [sender, receiver],
+                });
+            }
+
+            /* ---------- 2️⃣ CREATE MESSAGE ---------- */
+            const message = await Message.create({
+                chat: chat._id,
+                sender,
+                receiver,
+                content,
+            });
+
+            /* ---------- 3️⃣ UPDATE CHAT METADATA ---------- */
+            chat.lastMessage = message._id;
+            await chat.save();
+
+            /* ---------- 4️⃣ EMIT MESSAGE ---------- */
+            const receiverSocketId = userSocketMap.get(receiver.toString());
+            const senderSocketId = userSocketMap.get(sender.toString());
+
+            if (receiverSocketId) {
+                io.to(receiverSocketId).emit("receive-message", message);
+            }
+
+            if (senderSocketId) {
+                io.to(senderSocketId).emit("receive-message", message);
+            }
+        } catch (error) {
+            console.error("Send message error:", error);
+        }
+    };
+
+    const startTyping = ({ sender, receiver, chatId }) => {
+        const receiverSocketId = userSocketMap.get(receiver.toString());
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("typing:start", {
+                sender,
+                chatId,
             });
         }
-
-        /* ---------- 2️⃣ CREATE MESSAGE ---------- */
-        const message = await Message.create({
-            chat: chat._id,
-            sender,
-            receiver,
-            content,
-        });
-
-        /* ---------- 3️⃣ UPDATE CHAT METADATA ---------- */
-        chat.lastMessage = message._id;
-        await chat.save();
-
-        /* ---------- 4️⃣ EMIT MESSAGE ---------- */
-        const receiverSocketId = userSocketMap.get(receiver.toString());
-        const senderSocketId = userSocketMap.get(sender.toString());
-
-        if (receiverSocketId) {
-            io.to(receiverSocketId).emit("receive-message", message);
-        }
-
-        if (senderSocketId) {
-            io.to(senderSocketId).emit("receive-message", message);
-        }
-    } catch (error) {
-        console.error("Send message error:", error);
-    }
     };
+
+    const endTyping = ({ sender, receiver, chatId }) => {
+        console.log ("check");
+        const receiverSocketId = userSocketMap.get(receiver.toString());
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("typing:stop", {
+                sender,
+                chatId,
+            });
+        }
+    };
+
 
     io.on("connection", (socket) => {
         console.log(`Socket ${socket.id} connected.`);
@@ -86,9 +110,15 @@ const setupSocket = (server) => {
         } else {
             console.log("User ID not provided during connection.");
         }
+
+        onlineUsers.set(socket.id, userId);
+        io.emit('online-users', Array.from(onlineUsers.values()));
+        
         socket.on("disconnect", () => disconnect(socket));
 
         socket.on("send-message", sendMessage);
+        socket.on ("typing:start", startTyping);
+        socket.on ("typing:stop", endTyping);
     });
 }
 
