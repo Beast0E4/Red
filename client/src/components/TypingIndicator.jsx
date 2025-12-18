@@ -1,15 +1,10 @@
-export default function TypingIndicator({ username }) {
+export default function TypingIndicator() {
   return (
-    <div className="flex items-center gap-2 mt-1">
-      <span className="text-xs text-gray-500 italic">
-        {username} is typing
-      </span>
-
-      {/* Animated dots */}
-      <div className="flex gap-1">
-        <span className="dot" />
-        <span className="dot animation-delay-200" />
-        <span className="dot animation-delay-400" />
+    <div className="flex justify-start px-2">
+      <div className="bg-white px-3 py-3 rounded-md shadow-sm flex gap-1">
+        <span className="typing-dot" />
+        <span className="typing-dot delay-200" />
+        <span className="typing-dot delay-400" />
       </div>
     </div>
   );

@@ -89,7 +89,6 @@ const setupSocket = (server) => {
     };
 
     const endTyping = ({ sender, receiver, chatId }) => {
-        console.log ("check");
         const receiverSocketId = userSocketMap.get(receiver.toString());
         if (receiverSocketId) {
             io.to(receiverSocketId).emit("typing:stop", {

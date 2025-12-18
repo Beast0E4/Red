@@ -10,8 +10,6 @@ const getMessagesByUserIdService = async (userA, userB) => {
     .sort({ createdAt: 1 })
     .lean();
 
-    console.log ("Check -------------->", messages);
-
   return messages;
 };
 

@@ -18,8 +18,8 @@ const MessageBubble = React.memo(({ message, isMe }) => {
         </p>
 
         {/* Timestamp */}
-        <div className="mt-1 flex justify-end">
-          <span className="text-[10px] text-gray-500">
+        <div className="flex justify-end">
+          <span className="text-[8px] text-gray-500">
             {new Date(message.createdAt).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",

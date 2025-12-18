@@ -13,10 +13,7 @@ const createUser = async(data) => {
             return response;
         }
 
-        console.log ("this is");
-
         let res = await User.create(data);
-        console.log (res);
         response.user = res;
         return response;
     } catch (error) {

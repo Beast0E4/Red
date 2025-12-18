@@ -21,7 +21,6 @@ const isUserAuthenticated = async (req, res, next) => {
 
     // 🔥 ATTACH USER TO REQUEST
     req.user = { id: decoded.id };
-    console.log ("-------------->", decoded)
 
     next();
   } catch (error) {

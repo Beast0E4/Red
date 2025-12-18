@@ -157,84 +157,104 @@ export default function Chat() {
 
 
   return (
-    <div className="h-screen flex bg-gray-100">
-      {/* ================= Sidebar ================= */}
-      <div className="w-72 bg-white border-r flex flex-col">
-        <div className="p-4 border-b font-semibold text-lg">Users</div>
-
-        <div className="flex-1 overflow-y-auto">
-          {users.map((user) => (
-            <div
-              key={user._id}
-              onClick={() => {
-                setSelectedUser(user);
-                setMessages([]);
-              }}
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${
-                selectedUser?._id === user._id
-                  ? "bg-blue-50"
-                  : "hover:bg-gray-100"
-              }`}
-            >
-              <div className="h-10 w-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
-                {user.username[0].toUpperCase()}
-              </div>
-
-              <div>
-                <p className="font-medium">{user.username}</p>
-                {chatState.onlineUsers?.includes (user._id.toString()) && (
-                  <p className="text-xs text-green-500">Online</p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+  <div className="h-screen flex bg-[#0f172a] text-gray-200">
+    {/* ================= Sidebar ================= */}
+    <div className="w-72 bg-[#020617] border-r border-white/10 flex flex-col">
+      <div className="p-4 border-b border-white/10 text-lg font-semibold tracking-wide">
+        Users
       </div>
 
-      {/* ================= Chat Area ================= */}
-      <div className="flex-1 flex flex-col">
-        <div className="px-6 py-4 bg-white border-b">
-          {selectedUser ? (
-            <>
-              <p className="font-semibold">{selectedUser.username}</p>
-              {typingUser && (
-                <TypingIndicator username={selectedUser.username} />
-              )}
-
-            </>
-          ) : (
-            <p className="text-gray-400">Select a user to start chatting</p>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg._id}
-              message={msg}
-              isMe={msg.sender === authState.data._id}
-            />
-          ))}
-          <div ref={bottomRef} />
-        </div>
-
-        <div className="p-4 bg-white border-t flex gap-3">
-          <input
-            value={text}
-            onChange={handleTyping}
-            disabled={!selectedUser}
-            placeholder="Type a message..."
-            className="flex-1 border rounded-full px-4 py-2"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!selectedUser}
-            className="bg-blue-500 text-white px-5 py-2 rounded-full"
+      <div className="flex-1 overflow-y-auto">
+        {users.map((user) => (
+          <div
+            key={user._id}
+            onClick={() => {
+              setSelectedUser(user);
+              setMessages([]);
+            }}
+            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition
+              ${
+                selectedUser?._id === user._id
+                  ? "bg-white/10"
+                  : "hover:bg-white/5"
+              }`}
           >
-            Send
-          </button>
-        </div>
+            {/* Avatar */}
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow">
+              {user.username[0].toUpperCase()}
+            </div>
+
+            <div className="min-w-0">
+              <p className="font-medium truncate">{user.username}</p>
+
+              {user._id === typingUser ? (
+                <p className="text-xs text-indigo-400 italic">typing…</p>
+              ) : chatState.onlineUsers?.includes(user._id.toString()) ? (
+                <p className="text-xs text-green-400">Online</p>
+              ) : (
+                <p className="text-xs text-gray-500">Offline</p>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
-  );
+
+    {/* ================= Chat Area ================= */}
+    <div className="flex-1 flex flex-col bg-[#020617]">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-white/10 bg-[#020617]">
+        {selectedUser ? (
+          <p className="font-semibold tracking-wide">
+            {selectedUser.username}
+          </p>
+        ) : (
+          <p className="text-gray-500">Select a user to start chatting</p>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-[#0f172a]">
+        {messages.map((msg) => (
+          <MessageBubble
+            key={msg._id}
+            message={msg}
+            isMe={msg.sender === authState.data._id}
+          />
+        ))}
+
+        {/* WhatsApp-style typing dots */}
+        {typingUser && <TypingIndicator />}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="p-4 border-t border-white/10 bg-[#020617] flex gap-3">
+        <input
+          value={text}
+          onChange={handleTyping}
+          disabled={!selectedUser}
+          placeholder="Type a message..."
+          className="flex-1 bg-[#0f172a] text-gray-200 placeholder-gray-500
+                     rounded-full px-5 py-3 text-sm
+                     border border-white/10
+                     focus:outline-none focus:ring-2 focus:ring-indigo-500/60
+                     disabled:opacity-50"
+        />
+        <button
+          onClick={sendMessage}
+          disabled={!selectedUser}
+          className="bg-gradient-to-br from-indigo-500 to-purple-600
+                     hover:opacity-90 disabled:opacity-40
+                     text-white px-6 py-3 rounded-full font-medium
+                     shadow-lg transition"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 }
