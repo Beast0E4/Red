@@ -40,7 +40,6 @@ const socketSlice = createSlice({
         });
 
         socketInstance.on("online-users", (data) => {
-            console.log (data);
           dispatch(setOnlineUsers ({ onlineUsers: data }));
         });
       }

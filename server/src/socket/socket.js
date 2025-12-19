@@ -25,39 +25,40 @@ const setupSocket = (server) => {
         try {
             console.log(`Socket disconnected: ${socket.id}`);
 
+            // 1️⃣ Find userId for this socket
             const userId = await redisClient.get(
                 `chat:socket_user:${socket.id}`
             );
 
             if (!userId) {
-                // still emit to keep clients in sync
-                const onlineUsers = await redisClient.sMembers("chat:online_users");
-                io.emit("online-users", onlineUsers);
+                // No user found (maybe unauthenticated socket), just return
                 return;
             }
 
-            await setLastSeen(userId);
-
-            // Remove socket from user's active sockets
+            // 2️⃣ Remove socket from user's socket set
             await redisClient.sRem(
                 `chat:user_sockets:${userId}`,
                 socket.id
             );
 
+            // 3️⃣ Remove reverse mapping
             await redisClient.del(`chat:socket_user:${socket.id}`);
 
-            // Check if user still has active sockets
+            // 4️⃣ Check remaining sockets
             const remainingSockets = await redisClient.sCard(
                 `chat:user_sockets:${userId}`
             );
 
+            // 5️⃣ If NO sockets left → user is truly offline
             if (remainingSockets === 0) {
                 await redisClient.sRem("chat:online_users", userId);
-            }
+                await setLastSeen(userId);
 
-            // ALWAYS emit updated list
-            const onlineUsers = await redisClient.sMembers("chat:online_users");
-            io.emit("online-users", onlineUsers);
+                // 6️⃣ Emit ONLY if the user actually went offline
+                // We moved this INSIDE the if block
+                const onlineUsers = await redisClient.sMembers("chat:online_users");
+                io.emit("online-users", onlineUsers);
+            }
 
         } catch (error) {
             console.error("Disconnect error:", error);

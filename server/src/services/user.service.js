@@ -52,7 +52,7 @@ const setLastSeen = async ( userId ) => {
     try {
         await User.findByIdAndUpdate (
             userId,
-            { $set: { lastSeen: new Date() } },
+            { $set: { lastSeen: Date.now () } },
             { new: true }
         );
     } catch (error) {
