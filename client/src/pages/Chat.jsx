@@ -22,13 +22,10 @@ export default function Chat() {
     const [messages, setMessages] = useState([]);
     const [text, setText] = useState("");
 
-    const [isTyping, setIsTyping] = useState(false);
     const [typingUser, setTypingUser] = useState(null);
     const typingTimeoutRef = useRef(null);
 
     const bottomRef = useRef(null);
-
-    // Mobile sidebar toggle
     const [showSidebar, setShowSidebar] = useState(false);
 
     /* ================= Auth + Socket ================= */
@@ -67,58 +64,85 @@ export default function Chat() {
         loadMessages();
     }, [selectedUser]);
 
-    /* ================= Socket ================= */
+    /* ================= READ RECEIPT ON CHAT OPEN ================= */
+    useEffect(() => {
+        if (!socket || !selectedUser) return;
+
+        socket.emit("message:read", {
+            sender: selectedUser._id,
+            receiver: authState.data._id,
+        });
+    }, [selectedUser]);
+
+    /* ================= Socket Listeners ================= */
     useEffect(() => {
         if (!socket) return;
 
-        socket.on("receive-message", (msg) => {
-            if (
-                selectedUser &&
-                (msg.sender === selectedUser._id ||
-                    msg.receiver === selectedUser._id)
-            ) {
-                setMessages((prev) => [...prev, msg]);
-            }
-        });
+        const onReceiveMessage = (msg) => {
+            if (!selectedUser) return;
 
-        socket.on("typing:start", ({ sender }) => {
+            const isCurrentChat =
+                msg.sender === selectedUser._id ||
+                msg.receiver === selectedUser._id;
+
+            if (isCurrentChat) {
+                setMessages((prev) => [...prev, msg]);
+
+                // Auto-read if I received and chat is open
+                if (msg.receiver === authState.data._id) {
+                    socket.emit("message:read", {
+                        sender: msg.sender,
+                        receiver: authState.data._id,
+                    });
+                }
+            }
+        };
+
+        const onTypingStart = ({ sender }) => {
             if (sender === selectedUser?._id) {
                 setTypingUser(sender);
             }
-        });
+        };
 
-        socket.on("typing:stop", () => {
-            setTypingUser(null);
-        });
+        const onTypingStop = ({ sender }) => {
+            if (sender === selectedUser?._id) {
+                setTypingUser(null);
+            }
+        };
+
+        const onMessageRead = ({ sender }) => {
+            // Sender == user who read my messages
+            setMessages((prev) =>
+                prev.map((m) =>
+                    m.sender === authState.data._id &&
+                    m.receiver === sender
+                        ? { ...m, status: "read" }
+                        : m
+                )
+            );
+        };
+
+        socket.on("receive-message", onReceiveMessage);
+        socket.on("typing:start", onTypingStart);
+        socket.on("typing:stop", onTypingStop);
+        socket.on("message:read", onMessageRead);
 
         return () => {
-            socket.off("message");
-            socket.off("typing:start");
-            socket.off("typing:stop");
+            socket.off("receive-message", onReceiveMessage);
+            socket.off("typing:start", onTypingStart);
+            socket.off("typing:stop", onTypingStop);
+            socket.off("message:read", onMessageRead);
         };
     }, [socket, selectedUser]);
 
-    /* ================= Scroll ================= */
+    /* ================= Auto Scroll ================= */
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages.length, typingUser]);
 
-    const formatLastSeen = (date) => {
-        if (!date) return "Offline";
+    const formatLastSeen = (date) => { if (!date) return "Offline"; const last = new Date(date); const now = new Date(); const diff = Math.floor((now - last) / 1000); } // seconds if (diff < 60) return "Just now"; if (diff < 3600) return ${Math.floor(diff / 60)} min ago; if (diff < 86400) return ${Math.floor(diff / 3600)} hr ago; return last.toLocaleDateString(); };
 
-        const last = new Date(date);
-        const now = new Date();
-        const diff = Math.floor((now - last) / 1000); // seconds
-        
-        if (diff < 60) return "Just now";
-        if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-        if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
-
-        return last.toLocaleDateString();
-    };
-
-
-    /* ================= Send ================= */
+    /* ================= Send Message ================= */
     const sendMessage = () => {
         if (!selectedUser || !text.trim()) return;
 
@@ -136,18 +160,13 @@ export default function Chat() {
         setText(e.target.value);
         if (!socket || !selectedUser) return;
 
-        if (!isTyping) {
-            setIsTyping(true);
-            socket.emit("typing:start", {
-                sender: authState.data._id,
-                receiver: selectedUser._id,
-            });
-        }
+        socket.emit("typing:start", {
+            sender: authState.data._id,
+            receiver: selectedUser._id,
+        });
 
         clearTimeout(typingTimeoutRef.current);
-
         typingTimeoutRef.current = setTimeout(() => {
-            setIsTyping(false);
             socket.emit("typing:stop", {
                 sender: authState.data._id,
                 receiver: selectedUser._id,
@@ -155,17 +174,9 @@ export default function Chat() {
         }, 800);
     };
 
-    const handleSelectUser = (user) => {
-        setSelectedUser(user);
-        setShowSidebar(false); // Close sidebar on mobile after selection
-    };
+    const handleKeyPress = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
 
-    const handleKeyPress = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
+    const handleSelectUser = (user) => { setSelectedUser(user); setShowSidebar(false);} // Close sidebar on mobile after selection
 
     return (
         <div className="h-screen flex bg-[#0f172a] text-gray-200 overflow-hidden relative">

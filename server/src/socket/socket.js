@@ -25,54 +25,44 @@ const setupSocket = (server) => {
         try {
             console.log(`Socket disconnected: ${socket.id}`);
 
-            // 1️⃣ Find userId for this socket
             const userId = await redisClient.get(
                 `chat:socket_user:${socket.id}`
             );
 
-            if (!userId) {
-                // No user found (maybe unauthenticated socket), just return
-                return;
-            }
+            if (!userId) return;
 
-            // 2️⃣ Remove socket from user's socket set
+            // Remove socket mappings
             await redisClient.sRem(
                 `chat:user_sockets:${userId}`,
                 socket.id
             );
-
-            // 3️⃣ Remove reverse mapping
             await redisClient.del(`chat:socket_user:${socket.id}`);
 
-            // 4️⃣ Check remaining sockets
+            // If no sockets left → user offline
             const remainingSockets = await redisClient.sCard(
                 `chat:user_sockets:${userId}`
             );
 
-            // 5️⃣ If NO sockets left → user is truly offline
             if (remainingSockets === 0) {
                 await redisClient.sRem("chat:online_users", userId);
                 await setLastSeen(userId);
 
-                // 6️⃣ Emit ONLY if the user actually went offline
-                // We moved this INSIDE the if block
-                const onlineUsers = await redisClient.sMembers("chat:online_users");
+                const onlineUsers = await redisClient.sMembers(
+                    "chat:online_users"
+                );
                 io.emit("online-users", onlineUsers);
             }
-
         } catch (error) {
             console.error("Disconnect error:", error);
         }
     };
 
-
     /* ===================== SEND MESSAGE ===================== */
-    const sendMessage = async (data) => {
+    const sendMessage = async ({ sender, receiver, content }) => {
         try {
-            const { sender, receiver, content } = data;
             if (!sender || !receiver || !content) return;
 
-            /* 1️⃣ Find or create chat */
+            /* 1️⃣ FIND OR CREATE CHAT */
             let chat = await Chat.findOne({
                 participants: { $all: [sender, receiver] },
             });
@@ -83,37 +73,91 @@ const setupSocket = (server) => {
                 });
             }
 
-            /* 2️⃣ Create message */
-            const message = await Message.create({
+            /* 2️⃣ CREATE MESSAGE (SENT) */
+            let message = await Message.create({
                 chat: chat._id,
                 sender,
                 receiver,
                 content,
+                status: "sent",
             });
 
-            /* 3️⃣ Update chat */
+            /* 3️⃣ UPDATE CHAT */
             chat.lastMessage = message._id;
             await chat.save();
 
-            /* 4️⃣ Emit message to ALL sockets */
+            /* 4️⃣ FETCH SOCKETS */
+            const senderSockets = await redisClient.sMembers(
+                `chat:user_sockets:${sender}`
+            );
             const receiverSockets = await redisClient.sMembers(
                 `chat:user_sockets:${receiver}`
             );
+
+            /* 5️⃣ DELIVER MESSAGE */
+            if (receiverSockets.length > 0) {
+                await Message.findByIdAndUpdate(message._id, {
+                    status: "delivered",
+                });
+
+                message.status = "delivered";
+
+                receiverSockets.forEach((sid) => {
+                    io.to(sid).emit("receive-message", message);
+                });
+
+                senderSockets.forEach((sid) => {
+                    io.to(sid).emit("message:delivered", {
+                        messageId: message._id,
+                    });
+                });
+            }
+
+            /* 6️⃣ ALWAYS EMIT TO SENDER */
+            senderSockets.forEach((sid) => {
+                io.to(sid).emit("receive-message", message);
+            });
+        } catch (error) {
+            console.error("Send message error:", error);
+        }
+    };
+
+    /* ===================== MESSAGE READ ===================== */
+    const markMessageRead = async ({ sender, receiver }) => {
+        try {
+            if (!sender || !receiver) return;
+
+            /**
+             * Mark all delivered messages from sender → receiver as READ
+             */
+            await Message.updateMany(
+                {
+                    sender,
+                    receiver,
+                    status: { $ne: "read" },
+                },
+                { $set: { status: "read" } }
+            );
+
+            /**
+             * Notify sender (all sockets)
+             */
             const senderSockets = await redisClient.sMembers(
                 `chat:user_sockets:${sender}`
             );
 
-            [...receiverSockets, ...senderSockets].forEach((socketId) => {
-                io.to(socketId).emit("receive-message", message);
+            senderSockets.forEach((socketId) => {
+                io.to(socketId).emit("message:read", {
+                    sender: receiver, // who read the messages
+                });
             });
-        } catch (err) {
-            console.error("Send message error:", err);
+        } catch (error) {
+            console.error("Message read error:", error);
         }
     };
 
     /* ===================== TYPING ===================== */
     const startTyping = async ({ sender, receiver }) => {
-        // auto-expire in case stop event never fires
         await redisClient.set(
             `chat:typing:${receiver}:${sender}`,
             "1",
@@ -124,8 +168,8 @@ const setupSocket = (server) => {
             `chat:user_sockets:${receiver}`
         );
 
-        receiverSockets.forEach((socketId) => {
-            io.to(socketId).emit("typing:start", { sender });
+        receiverSockets.forEach((sid) => {
+            io.to(sid).emit("typing:start", { sender });
         });
     };
 
@@ -136,8 +180,8 @@ const setupSocket = (server) => {
             `chat:user_sockets:${receiver}`
         );
 
-        receiverSockets.forEach((socketId) => {
-            io.to(socketId).emit("typing:stop", { sender });
+        receiverSockets.forEach((sid) => {
+            io.to(sid).emit("typing:stop", { sender });
         });
     };
 
@@ -152,17 +196,18 @@ const setupSocket = (server) => {
 
             console.log(`Socket connected: ${socket.id} (user ${userId})`);
 
-            // Track online user
+            // Online tracking
             await redisClient.sAdd("chat:online_users", userId);
-
-            // Track socket <-> user mapping (MULTI TAB SAFE)
             await redisClient.sAdd(`chat:user_sockets:${userId}`, socket.id);
             await redisClient.set(`chat:socket_user:${socket.id}`, userId);
 
-            const onlineUsers = await redisClient.sMembers("chat:online_users");
+            const onlineUsers = await redisClient.sMembers(
+                "chat:online_users"
+            );
             io.emit("online-users", onlineUsers);
 
             socket.on("send-message", sendMessage);
+            socket.on("message:read", markMessageRead);
             socket.on("typing:start", startTyping);
             socket.on("typing:stop", stopTyping);
             socket.on("disconnect", () => disconnect(socket));

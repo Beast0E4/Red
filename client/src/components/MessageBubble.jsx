@@ -4,7 +4,7 @@ const MessageBubble = React.memo(({ message, isMe }) => {
   // Helper to determine tick color based on read status
   // If the background is blue (isMe), we use light blue for read, or opacity for unread.
   const getTickColor = () => {
-    if (message.read) return "text-blue-200"; // Distinct color for read
+    if (message.status === "read") return "text-white"; // Distinct color for read
     return "text-blue-100/50"; // Faded color for sent/delivered
   };
 
