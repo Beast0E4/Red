@@ -48,29 +48,21 @@ const validateUser = async (email, password) => {
     }
 };
 
-const refreshAccessToken = (refreshToken) => {
-  return new Promise((resolve, reject) => {
-    jwt.verify(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET,
-      (err, decoded) => {
-        if (err) return reject(new Error('Invalid refresh token'));
-
-        const accessToken = jwt.sign(
-          { id: decoded.id },
-          process.env.JWT_SECRET,
-          { expiresIn: process.env.JWT_EXPIRE }
+const setLastSeen = async ( userId ) => {
+    try {
+        await User.findByIdAndUpdate (
+            userId,
+            { $set: { lastSeen: new Date() } },
+            { new: true }
         );
-
-        resolve(accessToken);
-      }
-    );
-  });
+    } catch (error) {
+        console.log (error);
+    }
 };
 
 const getAllUsersService = async () => {
   const users = await User.find({})
-    .select("_id username email")
+    .select("_id username email lastSeen")
     .lean();
 
   return users;
@@ -80,6 +72,6 @@ const getAllUsersService = async () => {
 module.exports = {
   createUser,
   validateUser,
-  refreshAccessToken,
+  setLastSeen,
   getAllUsersService
 };

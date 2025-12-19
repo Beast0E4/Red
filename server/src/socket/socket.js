@@ -8,6 +8,7 @@ const Chat = require("../models/chat.model");
 
 const FRONT_URL = process.env.FRONT_URL;
 const { setIO } = require("./socketInstance");
+const { setLastSeen } = require("../services/user.service");
 
 const setupSocket = (server) => {
     const io = new Server(server, {
@@ -24,25 +25,45 @@ const setupSocket = (server) => {
         try {
             console.log(`Socket disconnected: ${socket.id}`);
 
-            const userId = await redisClient.get(`chat:socket_user:${socket.id}`);
-            if (!userId) return;
+            const userId = await redisClient.get(
+                `chat:socket_user:${socket.id}`
+            );
 
-            // Remove this socket from user's socket set
-            await redisClient.sRem(`chat:user_sockets:${userId}`, socket.id);
+            if (!userId) {
+                // still emit to keep clients in sync
+                const onlineUsers = await redisClient.sMembers("chat:online_users");
+                io.emit("online-users", onlineUsers);
+                return;
+            }
+
+            await setLastSeen(userId);
+
+            // Remove socket from user's active sockets
+            await redisClient.sRem(
+                `chat:user_sockets:${userId}`,
+                socket.id
+            );
+
             await redisClient.del(`chat:socket_user:${socket.id}`);
 
-            // If user has NO sockets left → mark offline
-            const remaining = await redisClient.sCard(`chat:user_sockets:${userId}`);
-            if (remaining === 0) {
+            // Check if user still has active sockets
+            const remainingSockets = await redisClient.sCard(
+                `chat:user_sockets:${userId}`
+            );
+
+            if (remainingSockets === 0) {
                 await redisClient.sRem("chat:online_users", userId);
             }
 
+            // ALWAYS emit updated list
             const onlineUsers = await redisClient.sMembers("chat:online_users");
             io.emit("online-users", onlineUsers);
-        } catch (err) {
-            console.error("Disconnect error:", err);
+
+        } catch (error) {
+            console.error("Disconnect error:", error);
         }
     };
+
 
     /* ===================== SEND MESSAGE ===================== */
     const sendMessage = async (data) => {

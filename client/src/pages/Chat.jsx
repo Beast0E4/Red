@@ -65,8 +65,6 @@ export default function Chat() {
         };
 
         loadMessages();
-
-        console.log ("check");
     }, [selectedUser]);
 
     /* ================= Socket ================= */
@@ -104,6 +102,21 @@ export default function Chat() {
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages.length, typingUser]);
+
+    const formatLastSeen = (date) => {
+        if (!date) return "Offline";
+
+        const last = new Date(date);
+        const now = new Date();
+        const diff = Math.floor((now - last) / 1000); // seconds
+
+        if (diff < 60) return "Just now";
+        if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
+
+        return last.toLocaleDateString();
+    };
+
 
     /* ================= Send ================= */
     const sendMessage = () => {
@@ -293,7 +306,7 @@ export default function Chat() {
                                 ) : chatState.onlineUsers?.includes(selectedUser._id.toString()) ? (
                                     <p className="text-xs text-green-400">Online</p>
                                 ) : (
-                                    <p className="text-xs text-gray-500">Offline</p>
+                                    <p className="text-xs text-gray-500">Last seen : {formatLastSeen (selectedUser.lastSeen)}</p>
                                 )}
                             </div>
                         </div>
