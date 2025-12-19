@@ -29,9 +29,6 @@ const messageSlice = createSlice({
     clearMessages: (state) => {
       state.list = [];
     },
-    updateMessages: (state, action) => {
-        state.list.push (action.payload.message);
-    },
     setOnlineUsers: (state, action) => {
       const users = action.payload?.onlineUsers;
       state.onlineUsers = users;
@@ -45,5 +42,5 @@ const messageSlice = createSlice({
   },
 });
 
-export const { clearMessages, updateMessages, setOnlineUsers } = messageSlice.actions;
+export const { clearMessages, setOnlineUsers } = messageSlice.actions;
 export default messageSlice.reducer;

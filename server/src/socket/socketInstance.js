@@ -1,6 +1,4 @@
 let io;
-const userSocketMap = new Map();
-const onlineUsers = new Map();
 
 const setIO = (ioInstance) => {
     io = ioInstance;
@@ -13,4 +11,4 @@ const getIO = () => {
     return io;
 };
 
-module.exports = { setIO, getIO, userSocketMap, onlineUsers };
+module.exports = { setIO, getIO };

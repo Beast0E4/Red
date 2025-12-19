@@ -20,9 +20,10 @@ app.use(function (req, res, next) {
 
 // Connect to DB and Redis
 connectDB();
-connectRedis();
 
-// Initialize Socket.IO
-setupSocket (server);
+(async () => {
+    await connectRedis();      // ✅ Redis first
+    setupSocket(server);       // ✅ Socket after
+})();
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
