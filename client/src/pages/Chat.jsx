@@ -140,7 +140,18 @@ export default function Chat() {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages.length, typingUser]);
 
-    const formatLastSeen = (date) => { if (!date) return "Offline"; const last = new Date(date); const now = new Date(); const diff = Math.floor((now - last) / 1000); } // seconds if (diff < 60) return "Just now"; if (diff < 3600) return ${Math.floor(diff / 60)} min ago; if (diff < 86400) return ${Math.floor(diff / 3600)} hr ago; return last.toLocaleDateString(); };
+    const formatLastSeen = (date) => { 
+        if (!date) return "Offline"; 
+        
+        const last = new Date(date); 
+        const now = new Date(); 
+        const diff = Math.floor((now - last) / 1000);  // seconds 
+        
+        if (diff < 60) return "Just now"; 
+        if (diff < 3600) return `${Math.floor(diff / 60)} min ago`; 
+        if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`; 
+        return last.toLocaleDateString(); 
+    };
 
     /* ================= Send Message ================= */
     const sendMessage = () => {

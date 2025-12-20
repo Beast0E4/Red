@@ -20,42 +20,64 @@ const setupSocket = (server) => {
 
     setIO(io);
 
-    /* ===================== DISCONNECT ===================== */
     const disconnect = async (socket) => {
-        try {
-            console.log(`Socket disconnected: ${socket.id}`);
+    try {
+        console.log(`Socket disconnected: ${socket.id}`);
 
-            const userId = await redisClient.get(
-                `chat:socket_user:${socket.id}`
-            );
+        // 1️⃣ Get userId for this socket
+        const userId = await redisClient.get(
+            `chat:socket_user:${socket.id}`
+        );
 
-            if (!userId) return;
+        if (!userId) return;
 
-            // Remove socket mappings
-            await redisClient.sRem(
-                `chat:user_sockets:${userId}`,
-                socket.id
-            );
-            await redisClient.del(`chat:socket_user:${socket.id}`);
+        // 2️⃣ Remove this socket from user's socket set
+        await redisClient.sRem(
+            `chat:user_sockets:${userId}`,
+            socket.id
+        );
 
-            // If no sockets left → user offline
-            const remainingSockets = await redisClient.sCard(
-                `chat:user_sockets:${userId}`
-            );
+        // 3️⃣ Remove reverse mapping
+        await redisClient.del(`chat:socket_user:${socket.id}`);
 
-            if (remainingSockets === 0) {
-                await redisClient.sRem("chat:online_users", userId);
-                await setLastSeen(userId);
+        // 4️⃣ CLEAN ZOMBIE SOCKETS
+        const sockets = await redisClient.sMembers(
+            `chat:user_sockets:${userId}`
+        );
 
-                const onlineUsers = await redisClient.sMembers(
-                    "chat:online_users"
+        let activeSockets = 0;
+
+        for (const sid of sockets) {
+            // If Socket.IO no longer has this socket → remove it
+            if (io.sockets.sockets.get(sid)) {
+                activeSockets++;
+            } else {
+                await redisClient.sRem(
+                    `chat:user_sockets:${userId}`,
+                    sid
                 );
-                io.emit("online-users", onlineUsers);
             }
-        } catch (error) {
-            console.error("Disconnect error:", error);
         }
-    };
+
+        // 5️⃣ If NO active sockets → user offline
+        if (activeSockets === 0) {
+            await redisClient.sRem("chat:online_users", userId);
+            await setLastSeen(userId);
+
+            console.log(`User ${userId} went offline`);
+        }
+
+        // 6️⃣ ALWAYS emit updated online list
+        const onlineUsers = await redisClient.sMembers(
+            "chat:online_users"
+        );
+        io.emit("online-users", onlineUsers);
+
+    } catch (error) {
+        console.error("Disconnect error:", error);
+    }
+};
+
 
     /* ===================== SEND MESSAGE ===================== */
     const sendMessage = async ({ sender, receiver, content }) => {
