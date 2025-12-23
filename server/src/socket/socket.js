@@ -104,6 +104,12 @@ const setupSocket = (server) => {
                 status: "sent",
             });
 
+            await Chat.findByIdAndUpdate(chat._id, {
+                $inc: {
+                    [`unreadCount.${receiver}`]: 1,
+                },
+            });
+
             /* 3️⃣ UPDATE CHAT */
             chat.lastMessage = message._id;
             await chat.save();
@@ -161,6 +167,18 @@ const setupSocket = (server) => {
                 { $set: { status: "read" } }
             );
 
+            // 2️⃣ Reset unread count
+            await Chat.findOneAndUpdate(
+                {
+                    participants: { $all: [sender, receiver] },
+                },
+                {
+                    $set: {
+                        [`unreadCount.${receiver}`]: 0,
+                    },
+                }
+            );
+
             /**
              * Notify sender (all sockets)
              */
@@ -179,7 +197,7 @@ const setupSocket = (server) => {
     };
 
     /* ===================== TYPING ===================== */
-    const startTyping = async ({ sender, receiver }) => {
+    const startTyping = async ({ sender, receiver, chatId }) => {
         await redisClient.set(
             `chat:typing:${receiver}:${sender}`,
             "1",
@@ -191,11 +209,14 @@ const setupSocket = (server) => {
         );
 
         receiverSockets.forEach((sid) => {
-            io.to(sid).emit("typing:start", { sender });
+            io.to(sid).emit("typing:start", {
+                sender,
+                chatId,
+            });
         });
     };
 
-    const stopTyping = async ({ sender, receiver }) => {
+    const stopTyping = async ({ sender, receiver, chatId }) => {
         await redisClient.del(`chat:typing:${receiver}:${sender}`);
 
         const receiverSockets = await redisClient.sMembers(
@@ -203,10 +224,12 @@ const setupSocket = (server) => {
         );
 
         receiverSockets.forEach((sid) => {
-            io.to(sid).emit("typing:stop", { sender });
+            io.to(sid).emit("typing:stop", {
+                sender,
+                chatId,
+            });
         });
     };
-
     /* ===================== CONNECTION ===================== */
     io.on("connection", async (socket) => {
         try {

@@ -1,10 +1,15 @@
 import { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
+import { Send, Menu, X, Users, Search } from "lucide-react";
 
-import { fetchAllUsers } from "../redux/slices/auth.slice";
 import { initSocket } from "../redux/slices/socket.slice";
-import { fetchMessagesByUserId } from "../redux/slices/chat.slice";
+import {
+    fetchAllChats,
+    fetchMessagesByChatId,
+    incrementUnread,
+    clearUnread,
+} from "../redux/slices/chat.slice";
 
 import MessageBubble from "../components/MessageBubble";
 import TypingIndicator from "../components/TypingIndicator";
@@ -17,16 +22,18 @@ export default function Chat() {
     const authState = useSelector((state) => state.auth);
     const chatState = useSelector((state) => state.chat);
 
-    const [users, setUsers] = useState([]);
-    const [selectedUser, setSelectedUser] = useState(null);
+    const chats = chatState.chats;
+
+    const [selectedChat, setSelectedChat] = useState(null);
     const [messages, setMessages] = useState([]);
     const [text, setText] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
 
     const [typingUser, setTypingUser] = useState(null);
     const typingTimeoutRef = useRef(null);
 
-    const bottomRef = useRef(null);
     const [showSidebar, setShowSidebar] = useState(false);
+    const bottomRef = useRef(null);
 
     /* ================= Auth + Socket ================= */
     useEffect(() => {
@@ -34,92 +41,79 @@ export default function Chat() {
             navigate("/create-account");
             return;
         }
+
         dispatch(initSocket({ userId: authState.data._id, dispatch }));
     }, []);
 
-    /* ================= Fetch Users ================= */
+    /* ================= Fetch Chats ================= */
     useEffect(() => {
-        const loadUsers = async () => {
-            const res = await dispatch(fetchAllUsers());
-            setUsers(
-                res.payload.users.filter(
-                    (u) => u._id !== authState.data._id
-                )
-            );
-        };
-        loadUsers();
+        dispatch(fetchAllChats());
     }, []);
 
     /* ================= Fetch Messages ================= */
     useEffect(() => {
-        if (!selectedUser) return;
+        if (!selectedChat) return;
 
         const loadMessages = async () => {
             const res = await dispatch(
-                fetchMessagesByUserId(selectedUser._id)
+                fetchMessagesByChatId(selectedChat._id)
             );
+
             setMessages(res.payload);
         };
 
         loadMessages();
-    }, [selectedUser]);
 
-    /* ================= READ RECEIPT ON CHAT OPEN ================= */
-    useEffect(() => {
-        if (!socket || !selectedUser) return;
+        dispatch(clearUnread(selectedChat._id));
 
-        socket.emit("message:read", {
-            sender: selectedUser._id,
-            receiver: authState.data._id,
+        socket?.emit("message:read", {
+            chatId: selectedChat._id,
+            reader: authState.data._id,
         });
-    }, [selectedUser]);
+    }, [selectedChat]);
 
     /* ================= Socket Listeners ================= */
     useEffect(() => {
         if (!socket) return;
 
         const onReceiveMessage = (msg) => {
-            if (!selectedUser) return;
+            if (!selectedChat || msg.chat !== selectedChat._id) {
+                dispatch(incrementUnread(msg.chat));
+                return;
+            }
 
-            const isCurrentChat =
-                msg.sender === selectedUser._id ||
-                msg.receiver === selectedUser._id;
+            setMessages((prev) => [...prev, msg]);
 
-            if (isCurrentChat) {
-                setMessages((prev) => [...prev, msg]);
-
-                // Auto-read if I received and chat is open
-                if (msg.receiver === authState.data._id) {
-                    socket.emit("message:read", {
-                        sender: msg.sender,
-                        receiver: authState.data._id,
-                    });
-                }
+            if (msg.receiver === authState.data._id) {
+                socket.emit("message:read", {
+                    chatId: msg.chat,
+                    reader: authState.data._id,
+                });
             }
         };
 
-        const onTypingStart = ({ sender }) => {
-            if (sender === selectedUser?._id) {
+        const onTypingStart = ({ sender, chatId }) => {
+            if (selectedChat && chatId === selectedChat._id) {
                 setTypingUser(sender);
             }
         };
 
-        const onTypingStop = ({ sender }) => {
-            if (sender === selectedUser?._id) {
+        const onTypingStop = ({ sender, chatId }) => {
+            if (selectedChat && chatId === selectedChat._id) {
                 setTypingUser(null);
             }
         };
 
-        const onMessageRead = ({ sender }) => {
-            // Sender == user who read my messages
-            setMessages((prev) =>
-                prev.map((m) =>
-                    m.sender === authState.data._id &&
-                    m.receiver === sender
-                        ? { ...m, status: "read" }
-                        : m
-                )
-            );
+        const onMessageRead = ({ chatId }) => {
+            if (selectedChat && chatId === selectedChat._id) {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.sender === authState.data._id
+                            ? { ...m, status: "read" }
+                            : m
+                    )
+                );
+            }
         };
 
         socket.on("receive-message", onReceiveMessage);
@@ -133,33 +127,25 @@ export default function Chat() {
             socket.off("typing:stop", onTypingStop);
             socket.off("message:read", onMessageRead);
         };
-    }, [socket, selectedUser]);
+    }, [socket, selectedChat]);
 
     /* ================= Auto Scroll ================= */
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages.length, typingUser]);
-
-    const formatLastSeen = (date) => { 
-        if (!date) return "Offline"; 
-        
-        const last = new Date(date); 
-        const now = new Date(); 
-        const diff = Math.floor((now - last) / 1000);  // seconds 
-        
-        if (diff < 60) return "Just now"; 
-        if (diff < 3600) return `${Math.floor(diff / 60)} min ago`; 
-        if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`; 
-        return last.toLocaleDateString(); 
-    };
+    }, [messages?.length, typingUser]);
 
     /* ================= Send Message ================= */
     const sendMessage = () => {
-        if (!selectedUser || !text.trim()) return;
+        if (!selectedChat || !text.trim()) return;
+
+        const receiver = selectedChat.participants.find(
+            (p) => p._id !== authState.data._id
+        );
 
         socket.emit("send-message", {
+            chatId: selectedChat._id,
             sender: authState.data._id,
-            receiver: selectedUser._id,
+            receiver: receiver._id,
             content: text,
         });
 
@@ -169,32 +155,51 @@ export default function Chat() {
     /* ================= Typing ================= */
     const handleTyping = (e) => {
         setText(e.target.value);
-        if (!socket || !selectedUser) return;
+        if (!socket || !selectedChat) return;
+
+        const receiver = selectedChat.participants.find(
+            (p) => p._id !== authState.data._id
+        );
 
         socket.emit("typing:start", {
             sender: authState.data._id,
-            receiver: selectedUser._id,
+            receiver: receiver._id,
+            chatId: selectedChat._id,
         });
 
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
             socket.emit("typing:stop", {
+                chatId: selectedChat._id,
                 sender: authState.data._id,
-                receiver: selectedUser._id,
+                receiver: receiver._id,
             });
         }, 800);
     };
 
-    const handleKeyPress = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+    /* ================= Helpers ================= */
+    const getOtherUser = (chat) =>
+        chat.participants.find(
+            (p) => p._id !== authState.data._id
+        );
 
-    const handleSelectUser = (user) => { setSelectedUser(user); setShowSidebar(false);} // Close sidebar on mobile after selection
+    const handleSelectChat = (chat) => {
+        setSelectedChat(chat);
+        setShowSidebar(false);
+    };
 
+    const filteredChats = chats.filter((chat) => {
+        const other = getOtherUser(chat);
+        return other.username.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+
+    /* ================= UI ================= */
     return (
-        <div className="h-screen flex bg-[#0f172a] text-gray-200 overflow-hidden relative">
-            {/* Mobile Overlay */}
+        <div className="h-screen flex bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-gray-100 overflow-hidden">
+            {/* Backdrop for mobile */}
             {showSidebar && (
-                <div
-                    className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+                <div 
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
                     onClick={() => setShowSidebar(false)}
                 />
             )}
@@ -202,216 +207,224 @@ export default function Chat() {
             {/* ================= Sidebar ================= */}
             <div
                 className={`
-                    fixed lg:relative
-                    inset-y-0 left-0
-                    z-50 lg:z-0
-                    w-80 sm:w-96 lg:w-80 xl:w-96
-                    bg-[#020617] border-r border-white/10
-                    flex flex-col
-                    transform transition-transform duration-300 ease-out
+                    fixed lg:relative inset-y-0 left-0 z-50
+                    w-full sm:w-96 lg:w-80 xl:w-96
+                    bg-gradient-to-b from-slate-900 to-slate-950
+                    border-r border-slate-700/50
+                    shadow-2xl
+                    transform transition-transform duration-300 ease-in-out
                     ${showSidebar ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+                    flex flex-col
                 `}
             >
                 {/* Sidebar Header */}
-                <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between">
-                    <div>
-                        <h2 className="font-bold text-lg sm:text-xl bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                            Messages
-                        </h2>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                            {users.length} contacts
-                        </p>
+                <div className="p-4 sm:p-6 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-500/20 rounded-lg">
+                                <Users className="w-5 h-5 text-indigo-400" />
+                            </div>
+                            <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                                Messages
+                            </h1>
+                        </div>
+                        <button
+                            onClick={() => setShowSidebar(false)}
+                            className="lg:hidden p-2 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
                     </div>
-                    <button
-                        onClick={() => setShowSidebar(false)}
-                        className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
+
+                    {/* Search Bar */}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search conversations..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl pl-10 pr-4 py-2.5 text-sm
+                                     placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent
+                                     transition-all"
+                        />
+                    </div>
                 </div>
 
-                {/* Users List */}
-                <div className="flex-1 overflow-y-auto">
-                    {users.map((user) => (
-                        <div
-                            key={user._id}
-                            onClick={() => handleSelectUser(user)}
-                            className={`
-                                flex items-center gap-3 sm:gap-4
-                                px-4 sm:px-5 py-3 sm:py-4
-                                cursor-pointer
-                                transition-all duration-200
-                                border-b border-white/5
-                                ${
-                                    selectedUser?._id === user._id
-                                        ? "bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border-l-4 border-indigo-500"
-                                        : "hover:bg-white/5 border-l-4 border-transparent"
-                                }
-                            `}
-                        >
-                            <div className="relative flex-shrink-0">
-                                <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                                    {user.username[0].toUpperCase()}
-                                </div>
-                                {chatState.onlineUsers?.includes(user._id.toString()) && (
-                                    <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 bg-green-500 rounded-full border-2 border-[#020617]" />
-                                )}
+                {/* Chat List */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    {filteredChats.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                                <Users className="w-8 h-8 text-slate-600" />
                             </div>
-
-                            <div className="min-w-0 flex-1">
-                                <p className="font-medium truncate text-sm sm:text-base">
-                                    {user.username}
-                                </p>
-
-                                {user._id === typingUser ? (
-                                    <p className="text-xs text-indigo-400 italic flex items-center gap-1">
-                                        <span className="flex gap-0.5">
-                                            <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                                            <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                                            <span className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                                        </span>
-                                        typing
-                                    </p>
-                                ) : chatState.onlineUsers?.includes(user._id.toString()) ? (
-                                    <p className="text-xs text-green-400 flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                                        Online
-                                    </p>
-                                ) : (
-                                    <p className="text-xs text-gray-500">
-                                        Offline
-                                    </p>
-                                )}
-                            </div>
-
-                            {selectedUser?._id === user._id && (
-                                <svg className="w-5 h-5 text-indigo-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                                </svg>
-                            )}
+                            <p className="text-slate-400">No chats found</p>
                         </div>
-                    ))}
+                    ) : (
+                        filteredChats.map((chat) => {
+                            const other = getOtherUser(chat);
+                            const isSelected = selectedChat?._id === chat._id;
+                            
+                            return (
+                                <div
+                                    key={chat._id}
+                                    onClick={() => handleSelectChat(chat)}
+                                    className={`
+                                        relative px-4 sm:px-6 py-4 cursor-pointer 
+                                        border-b border-slate-800/50
+                                        transition-all duration-200
+                                        ${isSelected
+                                            ? "bg-gradient-to-r from-indigo-500/20 to-purple-500/10 border-l-4 border-indigo-500"
+                                            : "hover:bg-slate-800/30 border-l-4 border-transparent hover:border-slate-700"}
+                                    `}
+                                >
+                                    <div className="flex gap-3">
+                                        {/* Avatar */}
+                                        <div className="relative flex-shrink-0">
+                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 
+                                                          flex items-center justify-center text-white font-semibold text-lg shadow-lg">
+                                                {other.username.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                                        </div>
+
+                                        {/* Chat Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <p className="font-semibold text-sm sm:text-base truncate">
+                                                    {other.username}
+                                                </p>
+                                                {chat.unreadCount > 0 && (
+                                                    <span className="flex-shrink-0 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs 
+                                                                   px-2 py-0.5 rounded-full font-medium shadow-lg ml-2">
+                                                        {chat.unreadCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs sm:text-sm text-slate-400 truncate">
+                                                {chat.lastMessage?.content || "No messages yet"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
 
             {/* ================= Chat Area ================= */}
-            <div className="flex-1 min-w-0 flex flex-col bg-[#020617]">
-                {/* Chat Header */}
-                <div className="px-3 sm:px-4 lg:px-6 py-3 sm:py-4 border-b border-white/10 bg-[#020617] flex items-center gap-3 sm:gap-4">
-                    <button
-                        onClick={() => setShowSidebar(true)}
-                        className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors flex-shrink-0"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                    </button>
+            <div className="flex-1 flex flex-col min-w-0">
+                {/* Header */}
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur shadow-lg">
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setShowSidebar(true)}
+                            className="lg:hidden p-2 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                            <Menu className="w-5 h-5" />
+                        </button>
 
-                    {selectedUser ? (
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="relative flex-shrink-0">
-                                <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm sm:text-base">
-                                    {selectedUser.username[0].toUpperCase()}
+                        {selectedChat ? (
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 
+                                              flex items-center justify-center text-white font-semibold shadow-lg flex-shrink-0">
+                                    {getOtherUser(selectedChat).username.charAt(0).toUpperCase()}
                                 </div>
-                                {chatState.onlineUsers?.includes(selectedUser._id.toString()) && (
-                                    <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-500 rounded-full border-2 border-[#020617]" />
-                                )}
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-base sm:text-lg truncate">
+                                        {getOtherUser(selectedChat).username}
+                                    </p>
+                                    {chatState.onlineUsers.includes (getOtherUser(selectedChat)._id) && <p className="text-xs sm:text-sm text-emerald-400">Online</p>}
+                                </div>
                             </div>
-                            <div className="min-w-0">
-                                <p className="font-semibold truncate text-sm sm:text-base">
-                                    {selectedUser.username}
-                                </p>
-                                {typingUser === selectedUser._id ? (
-                                    <p className="text-xs text-indigo-400">typing...</p>
-                                ) : chatState.onlineUsers?.includes(selectedUser._id.toString()) ? (
-                                    <p className="text-xs text-green-400">Online</p>
-                                ) : (
-                                    <p className="text-xs text-gray-500">Last seen : {formatLastSeen (selectedUser.lastSeen)}</p>
-                                )}
+                        ) : (
+                            <div className="flex items-center gap-3 text-slate-500">
+                                <Users className="w-5 h-5" />
+                                <p className="text-sm sm:text-base">Select a conversation to start messaging</p>
                             </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 sm:space-y-4 custom-scrollbar bg-slate-900/30">
+                    {!selectedChat ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 
+                                          rounded-full flex items-center justify-center mb-4 sm:mb-6">
+                                <Users className="w-10 h-10 sm:w-12 sm:h-12 text-indigo-400" />
+                            </div>
+                            <h2 className="text-lg sm:text-xl font-semibold mb-2">Welcome to Messages</h2>
+                            <p className="text-sm sm:text-base text-slate-400 max-w-md">
+                                Select a conversation from the sidebar to start chatting with your friends
+                            </p>
                         </div>
                     ) : (
-                        <p className="text-gray-500 text-sm sm:text-base">
-                            Select a contact to start chatting
-                        </p>
+                        <>
+                            {messages?.map((msg) => (
+                                <MessageBubble
+                                    key={msg._id}
+                                    message={msg}
+                                    isMe={
+                                        msg.sender?._id
+                                            ? msg.sender._id.toString() === authState.data._id
+                                            : msg.sender === authState.data._id
+                                    }
+                                />
+                            ))}
+
+                            {typingUser && <TypingIndicator />}
+                            <div ref={bottomRef} />
+                        </>
                     )}
                 </div>
 
-                {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-3 sm:space-y-4 bg-[#0f172a]">
-                    {!selectedUser && (
-                        <div className="h-full flex items-center justify-center">
-                            <div className="text-center space-y-3 px-4">
-                                <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center">
-                                    <svg className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <p className="text-gray-400 font-medium text-sm sm:text-base">No conversation selected</p>
-                                    <p className="text-gray-600 text-xs sm:text-sm mt-1">Choose a contact from the sidebar to begin</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {messages.map((msg) => (
-                        <MessageBubble
-                            key={msg._id}
-                            message={msg}
-                            isMe={msg.sender === authState.data._id}
-                        />
-                    ))}
-
-                    {typingUser && <TypingIndicator />}
-
-                    <div ref={bottomRef} />
-                </div>
-
-                {/* Input Area */}
-                <div className="p-3 sm:p-4 lg:p-5 border-t border-white/10 bg-[#020617]">
+                {/* Input */}
+                <div className="p-4 sm:p-6 border-t border-slate-700/50 bg-slate-900/50 backdrop-blur">
                     <div className="flex gap-2 sm:gap-3 max-w-4xl mx-auto">
                         <input
                             value={text}
                             onChange={handleTyping}
-                            onKeyPress={handleKeyPress}
-                            disabled={!selectedUser}
-                            placeholder={selectedUser ? "Type a message..." : "Select a user first..."}
-                            className="
-                                flex-1 min-w-0
-                                bg-[#0f172a] text-gray-200
-                                rounded-full px-4 sm:px-5 py-2.5 sm:py-3 text-sm sm:text-base
-                                border border-white/10
-                                focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-transparent
-                                disabled:opacity-50 disabled:cursor-not-allowed
-                                transition-all
-                                placeholder:text-gray-600
-                            "
+                            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                            disabled={!selectedChat}
+                            placeholder={selectedChat ? "Type your message..." : "Select a chat to start messaging"}
+                            className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4 sm:px-6 py-3 sm:py-3.5 
+                                     focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent
+                                     placeholder:text-slate-500 disabled:opacity-50 disabled:cursor-not-allowed
+                                     transition-all text-sm sm:text-base"
                         />
                         <button
                             onClick={sendMessage}
-                            disabled={!selectedUser || !text.trim()}
-                            className="
-                                bg-gradient-to-br from-indigo-500 to-purple-600
-                                text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-full
-                                disabled:opacity-40 disabled:cursor-not-allowed
-                                hover:shadow-lg hover:shadow-indigo-500/30
-                                active:scale-95
-                                transition-all duration-200
-                                font-medium text-sm sm:text-base
-                                flex-shrink-0
-                            "
+                            disabled={!selectedChat || !text.trim()}
+                            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500
+                                     disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed
+                                     px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl font-medium shadow-lg
+                                     transition-all duration-200 flex items-center gap-2 flex-shrink-0
+                                     hover:shadow-indigo-500/25"
                         >
                             <span className="hidden sm:inline">Send</span>
-                            <svg className="w-5 h-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                            </svg>
+                            <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                     </div>
                 </div>
             </div>
+
+            <style jsx>{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: rgba(15, 23, 42, 0.3);
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(100, 116, 139, 0.5);
+                    border-radius: 3px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(100, 116, 139, 0.7);
+                }
+            `}</style>
         </div>
     );
 }
