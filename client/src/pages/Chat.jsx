@@ -68,7 +68,7 @@ export default function Chat() {
 
         socket?.emit("message:read", {
             chatId: selectedChat._id,
-            reader: authState.data._id,
+            sender: authState.data._id,
         });
     }, [selectedChat]);
 
@@ -289,22 +289,35 @@ export default function Chat() {
                                         </div>
 
                                         {/* Chat Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <p className="font-semibold text-sm sm:text-base truncate">
+                                        <div className="flex-1 min-w-0 flex items-center justify-between">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-semibold text-sm sm:text-base truncate mb-1">
                                                     {other.username}
                                                 </p>
-                                                {chat.unreadCount > 0 && (
-                                                    <span className="flex-shrink-0 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs 
-                                                                   px-2 py-0.5 rounded-full font-medium shadow-lg ml-2">
-                                                        {chat.unreadCount}
-                                                    </span>
-                                                )}
+
+                                                <p className="text-xs sm:text-sm text-slate-400 truncate">
+                                                    {chat.lastMessage?.content || "No messages yet"}
+                                                </p>
                                             </div>
-                                            <p className="text-xs sm:text-sm text-slate-400 truncate">
-                                                {chat.lastMessage?.content || "No messages yet"}
-                                            </p>
+
+                                            {chat.unreadCount > 0 && (
+                                                <span
+                                                    className="
+                                                        flex-shrink-0
+                                                        bg-gradient-to-r from-red-500 to-pink-500
+                                                        text-white text-xs
+                                                        px-2 py-0.5
+                                                        rounded-full
+                                                        font-medium
+                                                        shadow-lg
+                                                        ml-2
+                                                    "
+                                                >
+                                                    {chat.unreadCount}
+                                                </span>
+                                            )}
                                         </div>
+
                                     </div>
                                 </div>
                             );

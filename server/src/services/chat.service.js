@@ -2,7 +2,7 @@ const Chat = require("../models/chat.model");
 const Message = require ("../models/message.model")
 
 const getUserChats = async (userId) => {
-    return Chat.find({
+    const chats = await Chat.find({
         participants: userId,
     })
         .populate("participants", "username lastSeen")
@@ -10,8 +10,15 @@ const getUserChats = async (userId) => {
             path: "lastMessage",
             select: "content sender status createdAt",
         })
-        .sort({ updatedAt: -1 });
+        .sort({ updatedAt: -1 })
+        .lean(); // 👈 IMPORTANT (returns plain JS objects)
+
+    return chats.map((chat) => ({
+        ...chat,
+        unreadCount: chat.unreadCount?.[userId.toString()] || 0,
+    }));
 };
+
 
 const getMessagesByChatId = async (chatId, userId) => {
     // 1️⃣ Validate chat & membership

@@ -151,50 +151,65 @@ const setupSocket = (server) => {
     };
 
     /* ===================== MESSAGE READ ===================== */
-    const markMessageRead = async ({ sender, receiver }) => {
+    const markMessageRead = async ({ chatId, sender }) => {
         try {
-            if (!sender || !receiver) return;
+            if (!chatId || !sender) return;
 
             /**
-             * Mark all delivered messages from sender → receiver as READ
+             * 1️⃣ Find chat to get the other participant
+             */
+            const chat = await Chat.findById(chatId);
+            if (!chat) return;
+
+            const receiver = chat.participants.find(
+                (id) => id.toString() !== sender.toString()
+            );
+
+            if (!receiver) return;
+
+            /**
+             * 2️⃣ Mark all messages as READ
+             * sender = message sender (other user)
+             * receiver = current user (reader)
              */
             await Message.updateMany(
                 {
-                    sender,
-                    receiver,
+                    chat: chatId,
+                    sender: receiver,
+                    receiver: sender,
                     status: { $ne: "read" },
                 },
                 { $set: { status: "read" } }
             );
 
-            // 2️⃣ Reset unread count
-            await Chat.findOneAndUpdate(
-                {
-                    participants: { $all: [sender, receiver] },
+            /**
+             * 3️⃣ Reset unread count for this user
+             */
+            await Chat.findByIdAndUpdate(chatId, {
+                $set: {
+                    [`unreadCount.${sender}`]: 0,
                 },
-                {
-                    $set: {
-                        [`unreadCount.${receiver}`]: 0,
-                    },
-                }
-            );
+            });
 
             /**
-             * Notify sender (all sockets)
+             * 4️⃣ Notify OTHER USER that messages were read
              */
-            const senderSockets = await redisClient.sMembers(
-                `chat:user_sockets:${sender}`
+            const receiverSockets = await redisClient.sMembers(
+                `chat:user_sockets:${receiver}`
             );
 
-            senderSockets.forEach((socketId) => {
+            receiverSockets.forEach((socketId) => {
                 io.to(socketId).emit("message:read", {
-                    sender: receiver, // who read the messages
+                    chatId,
+                    reader: sender, // who read the messages
                 });
             });
+
         } catch (error) {
             console.error("Message read error:", error);
         }
     };
+
 
     /* ===================== TYPING ===================== */
     const startTyping = async ({ sender, receiver, chatId }) => {
