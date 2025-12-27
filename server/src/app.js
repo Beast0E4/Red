@@ -21,7 +21,7 @@ app.use(express.json());
 
 // Routes (we'll add these later)
 app.use('/auth', authRoutes);
-app.use('/messages', messageRoutes);
+// app.use('/messages', messageRoutes);
 app.use('/chat', chatRoutes);
 
 module.exports = { app, server };

@@ -1,5 +1,7 @@
 const Chat = require("../models/chat.model");
 const Message = require ("../models/message.model")
+const { getIO } = require ('../socket/socketInstance')
+const { redisClient } = require ('../config/redis')
 
 const getUserChats = async (userId) => {
     const chats = await Chat.find({
@@ -39,12 +41,52 @@ const getMessagesByChatId = async (chatId, userId) => {
     // 2️⃣ Fetch messages
     const messages = await Message.find({ chat: chatId })
         .sort({ createdAt: 1 }) // oldest → newest
-        .populate("sender", "username")
-        .populate("receiver", "username");
+        .populate("sender", "_id username")
 
     return messages;
 };
 
+const createGroupChatService = async ({ creatorId, name, users }) => {
+    // 1️⃣ Ensure unique participants (string-safe)
+    const participants = [
+        ...new Set([creatorId.toString(), ...users.map(String)]),
+    ];
+
+    // 2️⃣ Initialize unread count
+    const unreadCount = {};
+    participants.forEach((id) => {
+        unreadCount[id] = 0;
+    });
+
+    // 3️⃣ Create chat
+    let chat = await Chat.create({
+        chatName: name,
+        isGroupChat: true,
+        participants,
+        unreadCount,
+        groupAdmin: creatorId,
+    });
+
+    // 4️⃣ Populate BEFORE emitting
+    chat = await chat.populate("participants", "username lastSeen");
+
+    const io = getIO();
+
+    // 5️⃣ Emit to ALL SOCKETS of each participant
+    for (const userId of participants) {
+        const socketIds = await redisClient.sMembers(
+            `chat:user_sockets:${userId}`
+        );
+
+        socketIds.forEach((socketId) => {
+            io.to(socketId).emit("chat:new", chat);
+        });
+    }
+
+    return chat;
+};
+
+
 module.exports = {
-    getUserChats, getMessagesByChatId
+    getUserChats, getMessagesByChatId, createGroupChatService
 };

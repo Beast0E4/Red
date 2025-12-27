@@ -1,5 +1,21 @@
 const mongoose = require("mongoose");
 
+const reactionSchema = new mongoose.Schema(
+    {
+        emoji: {
+            type: String, 
+            required: true,
+        },
+        users: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+            },
+        ],
+    },
+    { _id: false }
+);
+
 const messageSchema = new mongoose.Schema(
   {
     chat: {
@@ -15,11 +31,6 @@ const messageSchema = new mongoose.Schema(
       required: true,
     },
 
-    receiver: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-
     content: {
       type: String,
       required: true,
@@ -31,6 +42,8 @@ const messageSchema = new mongoose.Schema(
       enum: ["sent", "delivered", "read"],
       default: "sent",
     },
+
+    reactions: [reactionSchema]
   },
   {
     timestamps: true, // createdAt, updatedAt
@@ -39,6 +52,6 @@ const messageSchema = new mongoose.Schema(
 
 /* ---------- INDEXES ---------- */
 messageSchema.index({ chat: 1, createdAt: 1 });
-messageSchema.index({ receiver: 1, status: 1 });
+// messageSchema.index({ receiver: 1, status: 1 });
 
 module.exports = mongoose.model("Message", messageSchema);

@@ -5,6 +5,7 @@ const initialState = {
     data: JSON.parse(localStorage.getItem("data")) || undefined,
     token: localStorage.getItem("token") || "",
     isLoggedIn: localStorage.getItem("isLoggedIn") === "true",
+    users: []
 };
 
 /* ---------- SIGNUP ---------- */
@@ -70,6 +71,11 @@ const authSlice = createSlice({
         state.data = action.payload.userdata;
         state.token = action.payload.token;
         state.isLoggedIn = (action.payload?.token != undefined);
+      })
+      .addCase (fetchAllUsers.fulfilled, (state, action) => {
+        if (!action.payload) return;
+
+        state.users = action.payload.users;
       })
   },
 });

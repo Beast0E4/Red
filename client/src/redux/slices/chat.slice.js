@@ -40,6 +40,27 @@ export const fetchMessagesByChatId = createAsyncThunk(
     }
 );
 
+export const createGroupChat = createAsyncThunk(
+    "chat/createGroupChat",
+    async ({ name, users }, { rejectWithValue }) => {
+        try {
+            const res = await axiosInstance.post(
+                "/chat/group",
+                { name, users },
+                {
+                    headers: {
+                        "x-access-token": localStorage.getItem("token"),
+                    },
+                }
+            );
+
+            return res.data.chat;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message);
+        }
+    }
+);
+
 /* ============================================================
    SLICE
 ============================================================ */
@@ -98,6 +119,10 @@ const chatSlice = createSlice({
                 chat.lastMessage = message;
             }
         },
+
+        addChat (state, action) {
+            state.chats = [...state.chats, action.payload];
+        }
     },
 
     extraReducers: (builder) => {
@@ -122,6 +147,7 @@ export const {
     incrementUnread,
     clearUnread,
     updateLastMessage,
+    addChat
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

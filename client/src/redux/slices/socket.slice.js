@@ -1,6 +1,6 @@
 import { createSlice } from "@reduxjs/toolkit";
 import { io } from "socket.io-client";
-import { setOnlineUsers } from "./chat.slice";
+import { addChat, setOnlineUsers } from "./chat.slice";
 
 // Use environment variable at the top
 const BASE_URL = import.meta.env.VITE_BASE_URL;
@@ -42,6 +42,11 @@ const socketSlice = createSlice({
         socketInstance.on("online-users", (data) => {
           dispatch(setOnlineUsers ({ onlineUsers: data }));
         });
+
+        socketInstance.on("chat:new", (chat) => {
+            console.log (chat);
+            dispatch (addChat (chat));
+        })
       }
 
       state.socket = socketInstance;
@@ -52,7 +57,7 @@ const socketSlice = createSlice({
         socketInstance.off("connect");
         socketInstance.off("disconnect");
         socketInstance.off("online-users");
-        socketInstance.off("receive-message");
+        socketInstance.off("chat:new");
 
         socketInstance.disconnect();
         socketInstance = null;

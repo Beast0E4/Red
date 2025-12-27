@@ -21,108 +21,120 @@ const setupSocket = (server) => {
     setIO(io);
 
     const disconnect = async (socket) => {
-    try {
-        console.log(`Socket disconnected: ${socket.id}`);
+        try {
+            console.log(`Socket disconnected: ${socket.id}`);
 
-        // 1️⃣ Get userId for this socket
-        const userId = await redisClient.get(
-            `chat:socket_user:${socket.id}`
-        );
+            // 1️⃣ Get userId for this socket
+            const userId = await redisClient.get(
+                `chat:socket_user:${socket.id}`
+            );
 
-        if (!userId) return;
+            if (!userId) return;
 
-        // 2️⃣ Remove this socket from user's socket set
-        await redisClient.sRem(
-            `chat:user_sockets:${userId}`,
-            socket.id
-        );
+            // 2️⃣ Remove this socket from user's socket set
+            await redisClient.sRem(
+                `chat:user_sockets:${userId}`,
+                socket.id
+            );
 
-        // 3️⃣ Remove reverse mapping
-        await redisClient.del(`chat:socket_user:${socket.id}`);
+            // 3️⃣ Remove reverse mapping
+            await redisClient.del(`chat:socket_user:${socket.id}`);
 
-        // 4️⃣ CLEAN ZOMBIE SOCKETS
-        const sockets = await redisClient.sMembers(
-            `chat:user_sockets:${userId}`
-        );
+            // 4️⃣ CLEAN ZOMBIE SOCKETS
+            const sockets = await redisClient.sMembers(
+                `chat:user_sockets:${userId}`
+            );
 
-        let activeSockets = 0;
+            let activeSockets = 0;
 
-        for (const sid of sockets) {
-            // If Socket.IO no longer has this socket → remove it
-            if (io.sockets.sockets.get(sid)) {
-                activeSockets++;
-            } else {
-                await redisClient.sRem(
-                    `chat:user_sockets:${userId}`,
-                    sid
-                );
+            for (const sid of sockets) {
+                // If Socket.IO no longer has this socket → remove it
+                if (io.sockets.sockets.get(sid)) {
+                    activeSockets++;
+                } else {
+                    await redisClient.sRem(
+                        `chat:user_sockets:${userId}`,
+                        sid
+                    );
+                }
             }
+
+            // 5️⃣ If NO active sockets → user offline
+            if (activeSockets === 0) {
+                await redisClient.sRem("chat:online_users", userId);
+                await setLastSeen(userId);
+
+                console.log(`User ${userId} went offline`);
+            }
+
+            // 6️⃣ ALWAYS emit updated online list
+            const onlineUsers = await redisClient.sMembers(
+                "chat:online_users"
+            );
+            io.emit("online-users", onlineUsers);
+
+        } catch (error) {
+            console.error("Disconnect error:", error);
         }
-
-        // 5️⃣ If NO active sockets → user offline
-        if (activeSockets === 0) {
-            await redisClient.sRem("chat:online_users", userId);
-            await setLastSeen(userId);
-
-            console.log(`User ${userId} went offline`);
-        }
-
-        // 6️⃣ ALWAYS emit updated online list
-        const onlineUsers = await redisClient.sMembers(
-            "chat:online_users"
-        );
-        io.emit("online-users", onlineUsers);
-
-    } catch (error) {
-        console.error("Disconnect error:", error);
-    }
-};
+    };
 
 
     /* ===================== SEND MESSAGE ===================== */
-    const sendMessage = async ({ sender, receiver, content }) => {
+    const sendMessage = async ({ chatId, sender, content }) => {
         try {
-            if (!sender || !receiver || !content) return;
+            if (!chatId || !sender || !content) return;
 
-            /* 1️⃣ FIND OR CREATE CHAT */
-            let chat = await Chat.findOne({
-                participants: { $all: [sender, receiver] },
-            });
+            /* 1️⃣ FIND CHAT */
+            const chat = await Chat.findById(chatId).populate(
+                "participants",
+                "_id username"
+            );
 
-            if (!chat) {
-                chat = await Chat.create({
-                    participants: [sender, receiver],
-                });
-            }
+            if (!chat) return;
 
-            /* 2️⃣ CREATE MESSAGE (SENT) */
+            /* 2️⃣ DETERMINE RECEIVERS */
+            const receivers = chat.participants
+                .filter((p) => p._id.toString() !== sender.toString())
+                .map((p) => p._id.toString());
+
+            /* 3️⃣ CREATE MESSAGE */
             let message = await Message.create({
                 chat: chat._id,
                 sender,
-                receiver,
+                receiver: chat.isGroupChat ? null : receivers[0], // null for groups
                 content,
                 status: "sent",
             });
 
-            await Chat.findByIdAndUpdate(chat._id, {
-                $inc: {
-                    [`unreadCount.${receiver}`]: 1,
-                },
+            message = await Message.findById(message._id)
+                .populate("sender", "_id username")
+                .populate("receiver", "_id username");
+
+            /* 4️⃣ UPDATE UNREAD COUNTS */
+            const unreadUpdates = {};
+            receivers.forEach((uid) => {
+                unreadUpdates[`unreadCount.${uid}`] = 1;
             });
 
-            /* 3️⃣ UPDATE CHAT */
-            chat.lastMessage = message._id;
-            await chat.save();
+            await Chat.findByIdAndUpdate(chat._id, {
+                $inc: unreadUpdates,
+                lastMessage: message._id,
+            });
 
-            /* 4️⃣ FETCH SOCKETS */
+            /* 5️⃣ FETCH SOCKETS */
             const senderSockets = await redisClient.sMembers(
                 `chat:user_sockets:${sender}`
             );
-            const receiverSockets = await redisClient.sMembers(
-                `chat:user_sockets:${receiver}`
-            );
 
-            /* 5️⃣ DELIVER MESSAGE */
+            let receiverSockets = [];
+            for (const uid of receivers) {
+                const sockets = await redisClient.sMembers(
+                    `chat:user_sockets:${uid}`
+                );
+                receiverSockets.push(...sockets);
+            }
+
+            /* 6️⃣ DELIVER MESSAGE */
             if (receiverSockets.length > 0) {
                 await Message.findByIdAndUpdate(message._id, {
                     status: "delivered",
@@ -141,10 +153,11 @@ const setupSocket = (server) => {
                 });
             }
 
-            /* 6️⃣ ALWAYS EMIT TO SENDER */
+            /* 7️⃣ ALWAYS EMIT TO SENDER */
             senderSockets.forEach((sid) => {
                 io.to(sid).emit("receive-message", message);
             });
+
         } catch (error) {
             console.error("Send message error:", error);
         }
@@ -212,39 +225,144 @@ const setupSocket = (server) => {
 
 
     /* ===================== TYPING ===================== */
-    const startTyping = async ({ sender, receiver, chatId }) => {
-        await redisClient.set(
-            `chat:typing:${receiver}:${sender}`,
-            "1",
-            { EX: 2 }
-        );
+    const startTyping = async ({ sender, chatId }) => {
+        try {
+            if (!sender || !chatId) return;
 
-        const receiverSockets = await redisClient.sMembers(
-            `chat:user_sockets:${receiver}`
-        );
+            /* 1️⃣ Get chat participants */
+            const chat = await Chat.findById(chatId).select("participants isGroupChat");
+            if (!chat) return;
 
-        receiverSockets.forEach((sid) => {
-            io.to(sid).emit("typing:start", {
-                sender,
-                chatId,
-            });
-        });
+            /* 2️⃣ Determine receivers (everyone except sender) */
+            const receivers = chat.participants
+                .map(String)
+                .filter((id) => id !== sender.toString());
+
+            /* 3️⃣ Set typing flag in Redis (auto-expire) */
+            for (const receiver of receivers) {
+                await redisClient.set(
+                    `chat:typing:${chatId}:${receiver}:${sender}`,
+                    "1",
+                    { EX: 2 }
+                );
+            }
+
+            /* 4️⃣ Emit typing:start to all receiver sockets */
+            for (const receiver of receivers) {
+                const sockets = await redisClient.sMembers(
+                    `chat:user_sockets:${receiver}`
+                );
+
+                sockets.forEach((sid) => {
+                    io.to(sid).emit("typing:start", {
+                        sender,
+                        chatId,
+                    });
+                });
+            }
+        } catch (err) {
+            console.error("Typing start error:", err);
+        }
     };
 
-    const stopTyping = async ({ sender, receiver, chatId }) => {
-        await redisClient.del(`chat:typing:${receiver}:${sender}`);
+    const stopTyping = async ({ sender, chatId }) => {
+        try {
+            if (!sender || !chatId) return;
 
-        const receiverSockets = await redisClient.sMembers(
-            `chat:user_sockets:${receiver}`
-        );
+            /* 1️⃣ Get chat participants */
+            const chat = await Chat.findById(chatId).select("participants");
+            if (!chat) return;
 
-        receiverSockets.forEach((sid) => {
-            io.to(sid).emit("typing:stop", {
-                sender,
-                chatId,
-            });
-        });
+            /* 2️⃣ Determine receivers */
+            const receivers = chat.participants
+                .map(String)
+                .filter((id) => id !== sender.toString());
+
+            /* 3️⃣ Clear typing flag */
+            for (const receiver of receivers) {
+                await redisClient.del(
+                    `chat:typing:${chatId}:${receiver}:${sender}`
+                );
+            }
+
+            /* 4️⃣ Emit typing:stop */
+            for (const receiver of receivers) {
+                const sockets = await redisClient.sMembers(
+                    `chat:user_sockets:${receiver}`
+                );
+
+                sockets.forEach((sid) => {
+                    io.to(sid).emit("typing:stop", {
+                        sender,
+                        chatId,
+                    });
+                });
+            }
+        } catch (err) {
+            console.error("Typing stop error:", err);
+        }
     };
+
+    const handleMessageReaction = async ({ messageId, emoji, sender, chatId }) => {
+        try {
+            const message = await Message.findById(messageId);
+            if (!message) return;
+
+            const reaction = message.reactions.find(
+                (r) => r.emoji === emoji
+            );
+
+            if (!reaction) {
+                // First reaction for this emoji
+                message.reactions.push({
+                    emoji,
+                    users: [sender],
+                });
+            } else {
+                const userIndex = reaction.users.findIndex(
+                    (u) => u.toString() === sender
+                );
+
+                if (userIndex > -1) {
+                    // Remove reaction
+                    reaction.users.splice(userIndex, 1);
+
+                    if (reaction.users.length === 0) {
+                        message.reactions = message.reactions.filter(
+                            (r) => r.emoji !== emoji
+                        );
+                    }
+                } else {
+                    // Add reaction
+                    reaction.users.push(sender);
+                }
+            }
+
+            await message.save();
+
+            const populatedMessage = await Message.findById(message._id)
+                .populate("sender", "_id username")
+
+            const chat = await Chat.findById(chatId).select("participants");
+            if (!chat) return;
+
+            for (const userId of chat.participants) {
+                const sockets = await redisClient.sMembers(
+                    `chat:user_sockets:${userId}`
+                );
+
+                sockets.forEach((socketId) => {
+                    io.to(socketId).emit(
+                        "message:reaction:update",
+                        populatedMessage
+                    );
+                });
+            }
+        } catch (error) {
+            console.error("Reaction error:", error);
+        }
+    };
+
     /* ===================== CONNECTION ===================== */
     io.on("connection", async (socket) => {
         try {
@@ -270,6 +388,7 @@ const setupSocket = (server) => {
             socket.on("message:read", markMessageRead);
             socket.on("typing:start", startTyping);
             socket.on("typing:stop", stopTyping);
+            socket.on("message:react", handleMessageReaction);
             socket.on("disconnect", () => disconnect(socket));
         } catch (err) {
             console.error("Socket connection error:", err);

@@ -1,4 +1,4 @@
-const { getUserChats, getMessagesByChatId } = require("../services/chat.service");
+const { getUserChats, getMessagesByChatId, createGroupChatService } = require("../services/chat.service");
 
 const getAllChats = async (req, res) => {
     try {
@@ -38,6 +38,37 @@ const fetchMessagesByChatId = async (req, res) => {
     }
 };
 
+const createGroupChat = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { name, users } = req.body;
+
+        if (!name || !users || users.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: "Group name and at least 2 users required",
+            });
+        }
+
+        const chat = await createGroupChatService ({
+            creatorId: userId,
+            name,
+            users,
+        });
+
+        res.status(201).json({
+            success: true,
+            chat,
+        });
+    } catch (error) {
+        console.error("Create group error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to create group",
+        });
+    }
+};
+
 module.exports = {
-    getAllChats, fetchMessagesByChatId
+    getAllChats, fetchMessagesByChatId, createGroupChat
 };
