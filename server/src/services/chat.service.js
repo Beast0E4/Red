@@ -42,6 +42,10 @@ const getMessagesByChatId = async (chatId, userId) => {
     const messages = await Message.find({ chat: chatId })
         .sort({ createdAt: 1 }) // oldest → newest
         .populate("sender", "_id username")
+        .populate({
+            path: "reactions.users",
+            select: "_id username",
+        });
 
     return messages;
 };

@@ -44,7 +44,6 @@ const socketSlice = createSlice({
         });
 
         socketInstance.on("chat:new", (chat) => {
-            console.log (chat);
             dispatch (addChat (chat));
         })
       }

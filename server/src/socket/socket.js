@@ -108,7 +108,10 @@ const setupSocket = (server) => {
 
             message = await Message.findById(message._id)
                 .populate("sender", "_id username")
-                .populate("receiver", "_id username");
+                .populate({
+                    path: "reactions.users",
+                    select: "_id username",
+                });
 
             /* 4️⃣ UPDATE UNREAD COUNTS */
             const unreadUpdates = {};
@@ -342,6 +345,10 @@ const setupSocket = (server) => {
 
             const populatedMessage = await Message.findById(message._id)
                 .populate("sender", "_id username")
+                .populate({
+                    path: "reactions.users",
+                    select: "_id username",
+                });
 
             const chat = await Chat.findById(chatId).select("participants");
             if (!chat) return;

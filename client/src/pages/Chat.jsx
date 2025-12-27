@@ -71,6 +71,7 @@ export default function Chat() {
         });
     }, [selectedChat]);
 
+
     /* ================= Socket Listeners ================= */
     useEffect(() => {
         if (!socket) return;
@@ -133,7 +134,6 @@ export default function Chat() {
         if (!socket) return;
         
         const onReactionUpdate = (updatedMessage) => {
-            console.log (updatedMessage);
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg._id === updatedMessage._id ? updatedMessage : msg
