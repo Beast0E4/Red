@@ -1,6 +1,6 @@
-import React, { useState, useRef } from "react";
-import { Smile, Plus, MoreHorizontal } from "lucide-react";
-import ReactionModal from "./ReactionModal"; // Import the modal here directly
+import { useState, useRef } from "react";
+import { Smile, MoreHorizontal, Reply } from "lucide-react";
+import ReactionModal from "./ReactionModal"; 
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "😡"];
 
@@ -9,10 +9,14 @@ export default function MessageBubble({
     isMe, 
     showHeader, 
     currentUserId, 
-    onReact 
+    onReact,
+    onReply,
+    messageRef,
+    onScrollToMessage,
+    isHighlighted // <--- Prop used here
 }) {
     const [showPicker, setShowPicker] = useState(false);
-    const [showReactionsModal, setShowReactionsModal] = useState(false); // Local state for modal
+    const [showReactionsModal, setShowReactionsModal] = useState(false); 
     const longPressTimer = useRef(null);
 
     /* ================= Helpers ================= */
@@ -35,10 +39,8 @@ export default function MessageBubble({
                 };
             }
 
-            // ✅ count = number of users for this emoji
             acc[emoji].count += users.length;
 
-            // ✅ check if current user reacted
             if (users.some(u => u._id === currentUserId || u === currentUserId)) {
                 acc[emoji].hasReacted = true;
             }
@@ -75,7 +77,6 @@ export default function MessageBubble({
     /* ================= Render ================= */
     return (
         <>
-            {/* 1. Render Modal locally if state is true */}
             {showReactionsModal && (
                 <ReactionModal
                     reactions={message.reactions} 
@@ -84,10 +85,17 @@ export default function MessageBubble({
             )}
 
             <div 
+                ref={messageRef}
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
                 onTouchMove={handleTouchMove}
-                className={`group relative flex gap-3 py-0.5 px-3 -mx-3 hover:bg-[#2e3035] ${showHeader ? 'mt-4' : ''} select-none md:select-text`}
+                className={`
+                    group relative flex gap-3 py-0.5 px-3 -mx-3 
+                    select-none md:select-text
+                    transition-colors duration-700 ease-out
+                    ${showHeader ? 'mt-4' : ''}
+                    ${isHighlighted ? 'bg-[#3f4147]' : 'hover:bg-[#2e3035]'}
+                `}
             >
                 {/* TOOLBAR */}
                 <div 
@@ -97,6 +105,15 @@ export default function MessageBubble({
                         ${showPicker ? 'opacity-100 visible' : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible'}
                     `}
                 >
+                    {/* Reply Button */}
+                    <button 
+                        onClick={() => onReply(message)}
+                        className="p-1.5 hover:bg-[#404249] rounded cursor-pointer text-[#b5bac1] hover:text-[#dbdee1]"
+                        title="Reply"
+                    >
+                        <Reply className="w-4 h-4" />
+                    </button>
+
                     {/* Emoji Picker Popover */}
                     {showPicker && (
                         <div className="absolute bottom-full right-0 mb-2 bg-[#2b2d31] border border-[#202225] p-2 rounded-lg shadow-xl flex gap-1 z-20 animate-in fade-in zoom-in-95 duration-100">
@@ -112,7 +129,6 @@ export default function MessageBubble({
                                     {emoji}
                                 </button>
                             ))}
-                            {/* Close (Mobile) */}
                             <button 
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -132,13 +148,13 @@ export default function MessageBubble({
                         <Smile className="w-4 h-4" />
                     </button>
                     
-                    {/* View Reactions Button (Three Dots) */}
+                    {/* View Reactions Button */}
                     {message.reactions && message.reactions.length > 0 && (
                         <button 
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setShowReactionsModal(true); // <--- Trigger local state
-                                setShowPicker(false); // Close picker if open
+                                setShowReactionsModal(true); 
+                                setShowPicker(false); 
                             }}
                             className="p-1.5 hover:bg-[#404249] rounded cursor-pointer text-[#b5bac1] hover:text-[#dbdee1]"
                             title="View Reactions"
@@ -146,10 +162,6 @@ export default function MessageBubble({
                             <MoreHorizontal className="w-4 h-4" />
                         </button>
                     )}
-
-                    <button className="p-1.5 hover:bg-[#404249] rounded cursor-pointer text-[#b5bac1] hover:text-[#dbdee1]">
-                        <Plus className="w-4 h-4 rotate-45" />
-                    </button>
                 </div>
 
                 {/* Left Column */}
@@ -178,6 +190,29 @@ export default function MessageBubble({
                         </div>
                     )}
                     
+                    {/* Reply Reference */}
+                    {message.replyTo && (
+                        <div 
+                            onClick={() => onScrollToMessage(message.replyTo._id)} 
+                            className="relative mb-2 ml-0.5 pl-3 py-1.5 pr-2 rounded-md bg-gradient-to-r from-[#2b2d31] to-transparent border-l-2 border-[#5865f2] hover:bg-[#2e3035] transition-all cursor-pointer group/reply"
+                        >
+                            <div className="flex items-start gap-2">
+                                <Reply className="w-3.5 h-3.5 text-[#5865f2] mt-0.5 flex-shrink-0 group-hover/reply:translate-x-0.5 transition-transform" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[13px] font-semibold text-[#5865f2] group-hover/reply:text-[#7289da]">
+                                            {message.replyTo.sender?.username || "Unknown User"}
+                                        </span>
+                                    </div>
+                                    <p className="text-[13px] text-[#b5bac1] truncate leading-tight mt-0.5">
+                                        {message.replyTo.content}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#5865f2] opacity-50 group-hover/reply:opacity-100 transition-opacity"></div>
+                        </div>
+                    )}
+                    
                     <p className={`text-[15px] ${isMe ? 'text-gray-100' : 'text-[#dbdee1]'} leading-[1.375rem] break-words whitespace-pre-wrap`}>
                         {message.content}
                     </p>
@@ -189,7 +224,6 @@ export default function MessageBubble({
                                 <button
                                     key={group.emoji}
                                     onClick={() => onReact(message._id, group.emoji)}
-                                    // Allow right-click to view details (Optional but nice UX)
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setShowReactionsModal(true);

@@ -80,7 +80,7 @@ const setupSocket = (server) => {
 
 
     /* ===================== SEND MESSAGE ===================== */
-    const sendMessage = async ({ chatId, sender, content }) => {
+    const sendMessage = async ({ chatId, sender, content, replyTo }) => {
         try {
             if (!chatId || !sender || !content) return;
 
@@ -104,6 +104,7 @@ const setupSocket = (server) => {
                 receiver: chat.isGroupChat ? null : receivers[0], // null for groups
                 content,
                 status: "sent",
+                replyTo
             });
 
             message = await Message.findById(message._id)
@@ -111,6 +112,10 @@ const setupSocket = (server) => {
                 .populate({
                     path: "reactions.users",
                     select: "_id username",
+                })
+                .populate({
+                    path: "replyTo",
+                    populate: { path: "sender", select: "username" },
                 });
 
             /* 4️⃣ UPDATE UNREAD COUNTS */

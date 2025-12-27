@@ -45,7 +45,12 @@ const getMessagesByChatId = async (chatId, userId) => {
         .populate({
             path: "reactions.users",
             select: "_id username",
-        });
+        })
+        .populate("replyTo", "content sender")
+        .populate({
+            path: "replyTo",
+            populate: { path: "sender", select: "username" },
+        })
 
     return messages;
 };

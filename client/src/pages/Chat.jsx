@@ -27,6 +27,7 @@ export default function Chat() {
     const [messages, setMessages] = useState([]);
     const [text, setText] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
+    const [replyingTo, setReplyingTo] = useState(null);
 
     const [typingUser, setTypingUser] = useState(null);
     const typingTimeoutRef = useRef(null);
@@ -34,7 +35,10 @@ export default function Chat() {
     const [showSidebar, setShowSidebar] = useState(false);
     const [showCreateGroup, setShowCreateGroup] = useState(false);
 
+    const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+
     const bottomRef = useRef(null);
+    const messageRefs = useRef({});
 
     /* ================= Auth + Socket ================= */
     useEffect(() => {
@@ -223,9 +227,11 @@ export default function Chat() {
             chatId: selectedChat._id,
             sender: authState.data._id,
             content: text,
+            replyTo: replyingTo ? replyingTo._id : null,
         });
 
         setText("");
+        setReplyingTo ("");
     };
 
     /* ================= Typing ================= */
@@ -479,6 +485,23 @@ export default function Chat() {
                                         showHeader={showAvatar}
                                         onReact={onReact}
                                         currentUserId={authState.data._id}
+                                        onReply={(message) => setReplyingTo(message)}
+                                        messageRef={(el) => {
+                                            if (el) messageRefs.current[msg._id] = el;
+                                        }}
+                                        onScrollToMessage={(id) => {
+                                            messageRefs.current[id]?.scrollIntoView({
+                                                behavior: "smooth",
+                                                block: "center",
+                                            });
+
+                                            setHighlightedMessageId(id);
+
+                                            setTimeout(() => {
+                                                setHighlightedMessageId(null);
+                                            }, 1500);
+                                        }}
+                                        isHighlighted={highlightedMessageId === msg._id}
                                     />
                                 );
                             })}
@@ -499,41 +522,71 @@ export default function Chat() {
                 </div>
 
                 {/* Message Input */}
-                {selectedChat && (
-                    <div className="px-4 pb-6">
-                        <div className="bg-[#383a40] rounded-lg">
-                            <div className="flex items-center px-4 py-3 gap-3">
-                                <button className="w-6 h-6 flex items-center justify-center hover:opacity-80 transition-opacity">
-                                    <Gift className="w-5 h-5 text-[#b5bac1]" />
-                                </button>
-                                <input
-                                    value={text}
-                                    onChange={handleTyping}
-                                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                                    placeholder={`Message ${selectedChat.isGroupChat ? '#' + getChatDetails(selectedChat).name : '@' + getChatDetails(selectedChat).name}`}
-                                    className="flex-1 bg-transparent outline-none text-[15px] text-white placeholder:text-[#6d6f78]"
-                                />
-                                <div className="flex items-center gap-2">
+                    {selectedChat && (
+                        <div className="px-4 pb-6">
+                            <div className="bg-[#383a40] rounded-lg flex flex-col">
+                                
+                                {/* === REPLY PREVIEW SECTION === */}
+                                {replyingTo && (
+                                    <div className="px-4 py-2 bg-[#2b2d31] rounded-t-lg border-b border-[#3f4147]">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 overflow-hidden text-sm text-[#b5bac1]">
+                                                <span className="whitespace-nowrap">
+                                                    Replying to <span className="font-bold text-white">@{replyingTo.sender.username}</span>
+                                                </span>
+                                            </div>
+                                            
+                                            <button 
+                                                onClick={() => setReplyingTo(null)}
+                                                className="p-1 rounded-full hover:bg-[#404249] text-[#b5bac1] hover:text-[#dbdee1] transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-300 truncate">
+                                            {replyingTo.content}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* === INPUT SECTION === */}
+                                <div className="flex items-center px-4 py-3 gap-3">
                                     <button className="w-6 h-6 flex items-center justify-center hover:opacity-80 transition-opacity">
-                                        <Smile className="w-5 h-5 text-[#b5bac1]" />
+                                        <Gift className="w-5 h-5 text-[#b5bac1]" />
                                     </button>
-                                    {text.trim() ? (
-                                        <button
-                                            onClick={sendMessage}
-                                            className="w-8 h-8 bg-[#5865f2] hover:bg-[#4752c4] rounded flex items-center justify-center transition-colors"
-                                        >
-                                            <Send className="w-4 h-4 text-white" />
-                                        </button>
-                                    ) : (
+                                    <input
+                                        value={text}
+                                        onChange={handleTyping}
+                                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                                        /* Update placeholder to show context */
+                                        placeholder={
+                                            replyingTo 
+                                            ? `Replying to @${replyingTo.sender.username}...`
+                                            : `Message ${selectedChat.isGroupChat ? '#' + getChatDetails(selectedChat).name : '@' + getChatDetails(selectedChat).name}`
+                                        }
+                                        className="flex-1 bg-transparent outline-none text-[15px] text-white placeholder:text-[#6d6f78]"
+                                    />
+                                    <div className="flex items-center gap-2">
                                         <button className="w-6 h-6 flex items-center justify-center hover:opacity-80 transition-opacity">
-                                            <Paperclip className="w-5 h-5 text-[#b5bac1]" />
+                                            <Smile className="w-5 h-5 text-[#b5bac1]" />
                                         </button>
-                                    )}
+                                        {text.trim() ? (
+                                            <button
+                                                onClick={sendMessage}
+                                                className="w-8 h-8 bg-[#5865f2] hover:bg-[#4752c4] rounded flex items-center justify-center transition-colors"
+                                            >
+                                                <Send className="w-4 h-4 text-white" />
+                                            </button>
+                                        ) : (
+                                            <button className="w-6 h-6 flex items-center justify-center hover:opacity-80 transition-opacity">
+                                                <Paperclip className="w-5 h-5 text-[#b5bac1]" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )}
             </div>
 
             <style jsx>{`
