@@ -271,7 +271,7 @@ export default function Chat() {
         selectedChat.participants.forEach((participant) => {
             if (participant._id === authState.data._id) return;
 
-            startCall(participant._id, "audio");
+            startCall({ _id: participant._id, username: participant.username}, "audio");
         });
     }
 
@@ -279,7 +279,7 @@ export default function Chat() {
         selectedChat.participants.forEach((participant) => {
             if (participant._id === authState.data._id) return;
 
-            startCall(participant._id, "video");
+            startCall({ _id: participant._id, username: participant.username}, "video");
         });
     }
 
@@ -351,7 +351,7 @@ export default function Chat() {
                 <CallScreen
                     localVideoRef={localVideoRef}
                     remoteVideoRef={remoteVideoRef}
-                    type={call.type}          // "audio" | "video"
+                    call={call}
                     onEnd={endCall}
                 />
             )}

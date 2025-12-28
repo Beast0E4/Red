@@ -12,32 +12,43 @@ export const useCall = () => {
     const peerRef = useRef(null);
     const localVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
-
+    
+    // Store ICE candidates until remote description is set
     const pendingIceCandidates = useRef([]);
 
     const [call, setCall] = useState({
         inCall: false,
         incoming: false,
         outgoing: false,
-        from: null,
+        from: null, // { _id, username }
+        to: null,   // { _id, username }
         type: null,
     });
 
-    /* ---------- START CALL (CALLER) ---------- */
-    const startCall = (receiverId, type) => {
-        setCall({ outgoing: true, to: receiverId, type });
+    /* ================= START CALL ================= */
+    const startCall = (receiver, type) => {
+        // Optimistically set outgoing state
+        setCall({ 
+            outgoing: true, 
+            inCall: false,
+            to: receiver, // Store full object for UI
+            type 
+        });
 
         socket.emit("call:start", {
             callerId: authState.data._id,
-            receiverId,
+            receiverId: receiver._id,
             callType: type,
         });
     };
 
-    /* ---------- ACCEPT CALL (RECEIVER) ---------- */
+    /* ================= ACCEPT CALL ================= */
     const acceptCall = () => {
-        setCall((c) => ({
-            ...c,
+        // Ensure we have a valid caller ID
+        if (!call.from) return;
+
+        setCall((prev) => ({
+            ...prev,
             inCall: true,
             incoming: false,
         }));
@@ -48,240 +59,185 @@ export const useCall = () => {
         });
     };
 
-
-    /* ---------- SOCKET LISTENERS ---------- */
-    useEffect(() => {
-        if (!socket) return;
-
-        /* INCOMING CALL */
-        socket.on("call:incoming", ({ from, type }) => {
-            setCall({
-                incoming: true,
-                from,
-                type,
-            });
-        });
-
-        /* CALL ACCEPTED → CALLER CREATES OFFER */
-        socket.on("call:accepted", async ({ by }) => {
-            if (peerRef.current) return;
-
-            setCall((c) => ({ ...c, inCall: true }));
-
-            const peer = createPeer({
-                socket,
-                from: authState.data._id,
-                to: by,
-                onRemoteStream: setRemoteStream,
-            });
-
-            peerRef.current = peer;
-
-            const stream = await getMediaStream(call.type);
-
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-
-            stream.getTracks().forEach(track =>
-                peer.addTrack(track, stream)
-            );
-
-            const offer = await peer.createOffer();
-            await peer.setLocalDescription(offer);
-
-            socket.emit("webrtc:offer", {
-                from: authState.data._id,
-                to: by,
-                offer,
-            });
-        });
-
-
-        /* RECEIVER GETS OFFER */
-        socket.on("webrtc:offer", async ({ from, offer }) => {
-            const peer = createPeer({
-                socket,
-                from: authState.data._id,
-                to: from,
-                onRemoteStream: setRemoteStream,
-            });
-
-            peerRef.current = peer;
-
-            const stream = await getMediaStream(call.type);
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-
-            stream.getTracks().forEach(track =>
-                peer.addTrack(track, stream)
-            );
-
-            await peer.setRemoteDescription(offer);
-
-            pendingIceCandidates.current.forEach((c) => {
-                peerRef.current.addIceCandidate(new RTCIceCandidate(c));
-            });
-            pendingIceCandidates.current = [];
-
-
-            const answer = await peer.createAnswer();
-            await peer.setLocalDescription(answer);
-
-            socket.emit("webrtc:answer", {
-                to: from,
-                from: authState.data._id,
-                answer,
-            });
-        });
-
-        /* CALLER GETS ANSWER */
-        socket.on("webrtc:answer", async ({ answer }) => {
-            await peerRef.current.setRemoteDescription(answer);
-
-            pendingIceCandidates.current.forEach((c) => {
-                peerRef.current.addIceCandidate(new RTCIceCandidate(c));
-            });
-            pendingIceCandidates.current = [];
-
-        });
-
-        /* ICE CANDIDATES */
-        socket.on("webrtc:ice-candidate", ({ candidate }) => {
-            const peer = peerRef.current;
-            if (!peer) return;
-
-            if (peer.remoteDescription) {
-                peer.addIceCandidate(new RTCIceCandidate(candidate));
-            } else {
-                pendingIceCandidates.current.push(candidate);
-            }
-        });
-
-
-        socket.on("call:end", ({ by }) => {
-            console.log("Call ended by", by);
-
-            // Stop media
-            if (localVideoRef.current?.srcObject) {
-                localVideoRef.current.srcObject
-                    .getTracks()
-                    .forEach((t) => t.stop());
-            }
-
-            peerRef.current?.close();
-            peerRef.current = null;
-
-            setCall({
-                inCall: false,
-                incoming: false,
-                outgoing: false,
-                from: null,
-                type: null,
-            });
-        });
-
-
-        return () => socket.removeAllListeners();
-    }, [socket, call.type]);
-
-    useEffect(() => {
-        if (!call.inCall || !call.from || !socket || !call.outgoing) return;
-
-        const setupCaller = async () => {
-            const peer = createPeer({
-                socket,
-                from: authState.data._id,
-                to: call.from._id,
-                onRemoteStream: setRemoteStream,
-            });
-
-            peerRef.current = peer;
-
-            const stream = await getMediaStream(call.type);
-            if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-            }
-
-            stream.getTracks().forEach(track =>
-            peer.addTrack(track, stream)
-            );
-
-            const offer = await peer.createOffer();
-            await peer.setLocalDescription(offer);
-
-            socket.emit("webrtc:offer", {
-                to: call.from._id,
-                from: authState.data._id,
-                offer,
-            });
-        };
-
-        setupCaller();
-    }, [call.inCall, call.outgoing]);
-
-    useEffect (() => {
-        // ALWAYS assign to remoteVideoRef, regardless of call type.
-        // The <video> element handles audio-only streams perfectly.
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
-        }
-    }, [remoteStream, call.type]);
-
-    /* ================= PREVENT ACCIDENTAL RELOAD ================= */
-    useEffect(() => {
-        const handleBeforeUnload = (e) => {
-            if (call.inCall || call.incoming || call.outgoing) {
-                // Standard way to trigger browser confirmation dialog
-                e.preventDefault();
-                e.returnValue = ""; // Chrome requires this to be set
-                return ""; 
-            }
-        };
-
-        window.addEventListener("beforeunload", handleBeforeUnload);
-        
-        return () => {
-            window.removeEventListener("beforeunload", handleBeforeUnload);
-        };
-    }, [call.inCall, call.incoming, call.outgoing]);
-
-
-    /* ---------- END CALL ---------- */
+    /* ================= END CALL ================= */
     const endCall = () => {
-        const otherUserId =
-            call.from?._id || call.from || call.to || call.to?._id; // supports both formats
+        const otherUserId = call.from?._id || call.to?._id;
 
-        // 1️⃣ Notify other peer
-        socket.emit("call:end", {
-            callerId: authState.data._id,
-            receiverId: otherUserId,
-        });
-
-        // 2️⃣ Stop media tracks
-        if (localVideoRef.current?.srcObject) {
-            localVideoRef.current.srcObject
-                .getTracks()
-                .forEach((t) => t.stop());
+        if (otherUserId) {
+            socket.emit("call:end", {
+                callerId: authState.data._id,
+                receiverId: otherUserId,
+            });
         }
 
-        // 3️⃣ Close peer
-        peerRef.current?.close();
-        peerRef.current = null;
+        // Cleanup Media & Peer
+        cleanupCall();
+    };
+
+    const cleanupCall = () => {
+        // Stop Local Tracks
+        if (localVideoRef.current?.srcObject) {
+            localVideoRef.current.srcObject.getTracks().forEach((t) => t.stop());
+            localVideoRef.current.srcObject = null;
+        }
+
+        // Close Peer
+        if (peerRef.current) {
+            peerRef.current.close();
+            peerRef.current = null;
+        }
+
+        // Reset State
         setRemoteStream(null);
-
-
-        // 4️⃣ Reset state
+        pendingIceCandidates.current = [];
         setCall({
             inCall: false,
             incoming: false,
             outgoing: false,
             from: null,
+            to: null,
             type: null,
         });
     };
 
+    /* ================= SOCKET EVENT LISTENERS ================= */
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleIncomingCall = ({ from, type }) => {
+            setCall({ incoming: true, from, type, inCall: false });
+        };
+
+        const handleCallAccepted = async ({ by }) => {
+            // 'by' is the receiver user object
+            setCall((prev) => ({ ...prev, inCall: true }));
+
+            // 1. Create Peer (pass ID string, NOT object)
+            const peer = createPeer({
+                socket,
+                from: authState.data._id,
+                to: by._id, // <--- FIX: Access ._id
+                onRemoteStream: setRemoteStream,
+            });
+            peerRef.current = peer;
+
+            // 2. Get Local Stream
+            const stream = await getMediaStream(call.type);
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+            }
+            stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+            // 3. Create Offer
+            const offer = await peer.createOffer();
+            await peer.setLocalDescription(offer);
+
+            socket.emit("webrtc:offer", {
+                from: authState.data._id,
+                to: by._id, // <--- FIX: Access ._id
+                offer,
+            });
+        };
+
+        const handleWebRTCOffer = async ({ from, offer }) => {
+            // 1. Create Peer
+            const peer = createPeer({
+                socket,
+                from: authState.data._id,
+                to: from, // 'from' here is usually an ID string from the server event
+                onRemoteStream: setRemoteStream,
+            });
+            peerRef.current = peer;
+
+            // 2. Get Local Stream
+            const stream = await getMediaStream(call.type);
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+            }
+            stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+
+            // 3. Set Remote Desc & Add Candidates
+            await peer.setRemoteDescription(offer);
+            pendingIceCandidates.current.forEach((c) => {
+                peer.addIceCandidate(new RTCIceCandidate(c));
+            });
+            pendingIceCandidates.current = [];
+
+            // 4. Answer
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+
+            socket.emit("webrtc:answer", {
+                from: authState.data._id,
+                to: from, 
+                answer,
+            });
+        };
+
+        const handleWebRTCAnswer = async ({ answer }) => {
+            if (peerRef.current) {
+                await peerRef.current.setRemoteDescription(answer);
+                // Process any candidates waiting for remote desc
+                pendingIceCandidates.current.forEach((c) => {
+                    peerRef.current.addIceCandidate(new RTCIceCandidate(c));
+                });
+                pendingIceCandidates.current = [];
+            }
+        };
+
+        const handleIceCandidate = ({ candidate }) => {
+            const peer = peerRef.current;
+            if (peer) {
+                if (peer.remoteDescription) {
+                    peer.addIceCandidate(new RTCIceCandidate(candidate));
+                } else {
+                    pendingIceCandidates.current.push(candidate);
+                }
+            }
+        };
+
+        const handleCallEnd = () => {
+            cleanupCall();
+        };
+
+        // --- Attach Listeners ---
+        socket.on("call:incoming", handleIncomingCall);
+        socket.on("call:accepted", handleCallAccepted);
+        socket.on("webrtc:offer", handleWebRTCOffer);
+        socket.on("webrtc:answer", handleWebRTCAnswer);
+        socket.on("webrtc:ice-candidate", handleIceCandidate);
+        socket.on("call:end", handleCallEnd);
+
+        // --- Cleanup Listeners (Safe Way) ---
+        return () => {
+            socket.off("call:incoming", handleIncomingCall);
+            socket.off("call:accepted", handleCallAccepted);
+            socket.off("webrtc:offer", handleWebRTCOffer);
+            socket.off("webrtc:answer", handleWebRTCAnswer);
+            socket.off("webrtc:ice-candidate", handleIceCandidate);
+            socket.off("call:end", handleCallEnd);
+        };
+    }, [socket, call.type]); // Removed unnecessary dependencies
+
+    /* ================= STREAM ASSIGNMENT ================= */
+    useEffect(() => {
+        if (remoteVideoRef.current && remoteStream) {
+            remoteVideoRef.current.srcObject = remoteStream;
+        }
+    }, [remoteStream]);
+
+    /* ================= PREVENT ACCIDENTAL RELOAD ================= */
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (call.inCall || call.incoming || call.outgoing) {
+                e.preventDefault();
+                e.returnValue = "";
+                return "";
+            }
+        };
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [call.inCall, call.incoming, call.outgoing]);
 
     return {
         call,

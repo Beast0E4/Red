@@ -5,7 +5,7 @@ export default function OutgoingCallModal({ type, onCancel }) {
     const isVideo = type === "video";
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-100 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-in fade-in duration-200">
             {/* Background decorative gradient */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#5865f2] rounded-full blur-[120px] opacity-10" />

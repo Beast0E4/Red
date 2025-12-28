@@ -1,14 +1,27 @@
 const { redisClient } = require("../config/redis");
 const { getIO } = require("./socketInstance");
+
 const User = require ('../models/user.model')
 
-/**
- * Helper: emit event to ALL sockets of a user
- */
+const getUsername = async (userId) => {
+    try {
+        const user = await User.findById(userId).select("username");
+
+        if (!user) {
+            console.log("User not found");
+            return null;
+        }
+
+        console.log("Found username:", user.username);
+        return user.username;
+
+    } catch (error) {
+        console.error("Error fetching username:", error);
+    }
+};
+
 const emitToUser = async (userId, event, payload) => {
     const io = getIO();
-
-    console.log (event);
 
     const sockets = await redisClient.sMembers(
         `chat:user_sockets:${userId}`
@@ -21,42 +34,46 @@ const emitToUser = async (userId, event, payload) => {
 
 /* ===================== START CALL ===================== */
 const startCall = async ({ callerId, receiverId, callType }) => {
-    /**
-     * callType: "audio" | "video"
-     */
-
     if (!callerId || !receiverId || !callType) return;
 
-    const user = await User.findById (callerId);
+    const username = await getUsername (callerId);
 
     await emitToUser(receiverId, "call:incoming", {
-        from: user,
+        from: { _id: callerId, username },
         type: callType,
     });
 };
 
 /* ===================== ACCEPT CALL ===================== */
 const acceptCall = async ({ callerId, receiverId }) => {
+    const username = await getUsername (receiverId);
+
     await emitToUser(callerId, "call:accepted", {
-        by: receiverId,
+        by: { _id: receiverId, username },
     });
 };
 
 /* ===================== REJECT CALL ===================== */
 const rejectCall = async ({ callerId, receiverId }) => {
+    const username = await getUsername (receiverId);
+
     await emitToUser(callerId, "call:rejected", {
-        by: receiverId,
+        by: { _id: receiverId, username },
     });
 };
 
 /* ===================== END CALL ===================== */
 const endCall = async ({ callerId, receiverId }) => {
+    const receiverUsername = await getUsername (receiverId);
+
     await emitToUser(callerId, "call:end", {
-        by: receiverId,
+        by: { _id: receiverId, username : receiverUsername },
     });
 
+    const senderUsername = await getUsername (callerId);
+
     await emitToUser(receiverId, "call:end", {
-        by: callerId,
+        by: { _id: callerId, username : senderUsername },
     });
 };
 
