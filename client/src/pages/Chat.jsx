@@ -14,6 +14,11 @@ import {
 import CreateGroupModal from "../components/CreateGroupModal";
 import { fetchAllUsers } from "../redux/slices/auth.slice";
 import MessageBubble from "../components/MessageBubble";
+import { useCall } from "../hooks/useCall";
+import IncomingCallModal from "../components/call/IncomingCallModal";
+import ActiveCall from "../components/call/CallScreen";
+import CallScreen from "../components/call/CallScreen";
+import OutgoingCallModal from "../components/call/OutgoingCallModal";
 
 export default function Chat() {
     const dispatch = useDispatch();
@@ -39,6 +44,16 @@ export default function Chat() {
 
     const bottomRef = useRef(null);
     const messageRefs = useRef({});
+
+    const {
+        call,
+        startCall,
+        acceptCall,
+        endCall,
+        localVideoRef,
+        remoteVideoRef,
+    } = useCall ();
+
 
     /* ================= Auth + Socket ================= */
     useEffect(() => {
@@ -97,7 +112,6 @@ export default function Chat() {
         };
 
         const onTypingStart = ({ sender, chatId }) => {
-            console.log ("strart");
             if (selectedChat && chatId === selectedChat._id) {
                 if (sender !== authState.data._id) setTypingUser(sender);
             }
@@ -253,6 +267,22 @@ export default function Chat() {
         }, 800);
     };
 
+    const audioCall = () => {
+        selectedChat.participants.forEach((participant) => {
+            if (participant._id === authState.data._id) return;
+
+            startCall(participant._id, "audio");
+        });
+    }
+
+    const videoCall = () => {
+        selectedChat.participants.forEach((participant) => {
+            if (participant._id === authState.data._id) return;
+
+            startCall(participant._id, "video");
+        });
+    }
+
     /* ================= Render Helper ================= */
     const renderChatList = (chatList) => {
         return chatList.map((chat) => {
@@ -300,6 +330,32 @@ export default function Chat() {
     return (
         <div className="h-screen flex bg-[#313338] text-gray-100 overflow-hidden font-sans">
             {showCreateGroup && <CreateGroupModal onClose={() => setShowCreateGroup(false)} />}
+
+                {call.outgoing && !call.inCall && (
+                    <OutgoingCallModal
+                        type={call.type}
+                        onCancel={endCall}
+                    />
+                )}
+
+            {call.incoming && !call.inCall && (
+                <IncomingCallModal
+                    caller={call.from}
+                    type={call.type}
+                    onAccept={acceptCall}
+                    onReject={endCall}
+                />
+            )}
+
+            {call.inCall && (
+                <CallScreen
+                    localVideoRef={localVideoRef}
+                    remoteVideoRef={remoteVideoRef}
+                    type={call.type}          // "audio" | "video"
+                    onEnd={endCall}
+                />
+            )}
+
             
             {showSidebar && (
                 <div 
@@ -434,8 +490,8 @@ export default function Chat() {
                     {/* Header Icons */}
                     {selectedChat && (
                         <div className="flex items-center gap-4">
-                            <Phone className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
-                            <Video className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
+                            <Phone onClick={audioCall} className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
+                            <Video onClick={videoCall} className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
                             <Pin className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
                             <div className="w-px h-6 bg-[#3f4147]" />
                             <Search className="w-5 h-5 text-[#b5bac1] hover:text-[#dbdee1] cursor-pointer" />
@@ -474,14 +530,12 @@ export default function Chat() {
                             </div>
 
                             {messages?.map((msg, idx) => {
-                                const isMe = msg.sender._id === authState.data._id;
                                 const showAvatar = idx === 0 || messages[idx - 1]?.sender._id !== msg.sender._id;
                                 
                                 return (
                                     <MessageBubble 
                                         key={msg._id}
                                         message={msg}
-                                        isMe={isMe}
                                         showHeader={showAvatar}
                                         onReact={onReact}
                                         currentUserId={authState.data._id}

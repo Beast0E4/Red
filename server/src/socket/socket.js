@@ -10,6 +10,16 @@ const FRONT_URL = process.env.FRONT_URL;
 const { setIO } = require("./socketInstance");
 const { setLastSeen } = require("../services/user.service");
 
+const {
+    startCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    sendOffer,
+    sendAnswer,
+    sendIceCandidate,
+} = require ('./call.socket');
+
 const setupSocket = (server) => {
     const io = new Server(server, {
         cors: {
@@ -401,6 +411,18 @@ const setupSocket = (server) => {
             socket.on("typing:start", startTyping);
             socket.on("typing:stop", stopTyping);
             socket.on("message:react", handleMessageReaction);
+
+            socket.on("call:start", startCall);
+            socket.on("call:accept", acceptCall);
+            socket.on("call:reject", rejectCall);
+            socket.on("call:end", endCall);
+
+            /* ================= WEBRTC SIGNAL ================= */
+
+            socket.on("webrtc:offer", sendOffer);
+            socket.on("webrtc:answer", sendAnswer);
+            socket.on("webrtc:ice-candidate", sendIceCandidate);
+
             socket.on("disconnect", () => disconnect(socket));
         } catch (err) {
             console.error("Socket connection error:", err);

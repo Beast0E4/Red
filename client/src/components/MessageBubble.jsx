@@ -1,12 +1,12 @@
 import { useState, useRef } from "react";
 import { Smile, MoreHorizontal, Reply } from "lucide-react";
 import ReactionModal from "./ReactionModal"; 
+import { useSelector } from "react-redux";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "😡"];
 
 export default function MessageBubble({ 
     message, 
-    isMe, 
     showHeader, 
     currentUserId, 
     onReact,
@@ -18,6 +18,9 @@ export default function MessageBubble({
     const [showPicker, setShowPicker] = useState(false);
     const [showReactionsModal, setShowReactionsModal] = useState(false); 
     const longPressTimer = useRef(null);
+    const authState = useSelector ((state) => state.auth);
+
+    const isMe = authState.data?._id === message.sender?._id;
 
     /* ================= Helpers ================= */
     const formatTime = (timestamp) => {
@@ -201,7 +204,7 @@ export default function MessageBubble({
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5">
                                         <span className="text-[13px] font-semibold text-[#5865f2] group-hover/reply:text-[#7289da]">
-                                            {message.replyTo.sender?.username || "Unknown User"}
+                                            {message.replyTo.sender?._id === authState.data._id ? "You" : message.replyTo.sender?.username || "Unknown User"}
                                         </span>
                                     </div>
                                     <p className="text-[13px] text-[#b5bac1] truncate leading-tight mt-0.5">
